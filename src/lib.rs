@@ -54,11 +54,14 @@ pub fn run() -> Result<()> {
 
 fn run_tui(config: Config, privilege: privilege::PrivilegeInfo, dry_run: bool) -> Result<()> {
     install_panic_hook();
+    // Pick RGB vs 256-color palette before any widget draws (Terminal.app needs indexed).
+    crate::ui::theme::init();
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
 
     let backend = CrosstermBackend::new(stdout());
     let mut terminal = Terminal::new(backend)?;
+    crate::ui::terminal::prepare(&mut terminal)?;
 
     // A single EventHandler owns the one channel that carries input, ticks, and
     // worker messages. The same handler's sender is what scanners push results
@@ -72,6 +75,7 @@ fn run_tui(config: Config, privilege: privilege::PrivilegeInfo, dry_run: bool) -
 
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
+    crate::ui::terminal::restore();
     terminal.show_cursor()?;
 
     result?;
@@ -83,6 +87,7 @@ fn install_panic_hook() {
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
         let _ = stdout().execute(LeaveAlternateScreen);
+        crate::ui::terminal::restore();
         original(info);
     }));
 }

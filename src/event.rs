@@ -65,6 +65,7 @@ impl DiskInfo {
 pub enum Event {
     Input(crossterm::event::Event),
     Tick,
+    Resize,
     Worker(WorkerMsg),
 }
 
@@ -89,7 +90,12 @@ impl EventHandler {
                 if crossterm::event::poll(timeout).unwrap_or(false) {
                     match crossterm::event::read() {
                         Ok(ev) => {
-                            if input_tx.send(Event::Input(ev)).is_err() {
+                            let event = if matches!(ev, crossterm::event::Event::Resize(_, _)) {
+                                Event::Resize
+                            } else {
+                                Event::Input(ev)
+                            };
+                            if input_tx.send(event).is_err() {
                                 break;
                             }
                         }

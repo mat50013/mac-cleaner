@@ -10,7 +10,12 @@ use ratatui::Frame;
 pub enum Modal {
     None,
     Help,
-    ConfirmClean { count: usize, bytes: u64 },
+    ConfirmClean {
+        count: usize,
+        bytes: u64,
+        permanent: bool,
+        empty_trash: bool,
+    },
     CleanProgress { done: usize, total: usize, freed: u64 },
     CleanDone { freed: u64, failures: Vec<String> },
     Fda,
@@ -21,16 +26,29 @@ pub fn draw(f: &mut Frame, area: Rect, modal: &Modal) {
     match modal {
         Modal::None => {}
         Modal::Help => draw_help(f, area),
-        Modal::ConfirmClean { count, bytes } => {
-            draw_centered(
-                f,
-                area,
-                "Confirm clean",
-                &format!(
-                    "Delete {count} items ({}) to Trash?\n\n[y] Yes  [n] No",
+        Modal::ConfirmClean {
+            count,
+            bytes,
+            permanent,
+            empty_trash,
+        } => {
+            let body = if *empty_trash {
+                format!(
+                    "Permanently empty Trash ({})?\n\nThis cannot be undone.\n\n[y] Yes  [n] No",
                     human_size(*bytes)
-                ),
-            );
+                )
+            } else if *permanent {
+                format!(
+                    "Permanently delete {count} items ({})?\n\nThis cannot be undone.\n\n[y] Yes  [n] No",
+                    human_size(*bytes)
+                )
+            } else {
+                format!(
+                    "Move {count} items ({}) to Trash?\n\nUse [D] to delete forever instead.\n\n[y] Yes  [n] No",
+                    human_size(*bytes)
+                )
+            };
+            draw_centered(f, area, "Confirm clean", &body);
         }
         Modal::CleanProgress { done, total, freed } => {
             draw_centered(
@@ -89,7 +107,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
     let text = "\
 Navigation\n  ↑/↓ or j/k  move selection\n  Tab / Shift+Tab  switch category\n\n\
 Selection\n  Space       toggle item\n  a           select ALL in category\n  A           deselect category\n  s           select all Safe items\n  n           clear all selections\n  i           invert category selection\n  Enter       flip duplicate keeper\n\n\
-Actions\n  d           clean selected items\n  r           rescan\n  ?           this help\n  q / Esc     quit\n";
+Actions\n  d           move selected to Trash\n  D           delete selected forever\n  r           rescan\n  ?           this help\n  q / Esc     quit\n";
     draw_centered(f, area, "Help", text);
 }
 

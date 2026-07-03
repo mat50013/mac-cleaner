@@ -55,7 +55,17 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/"))
 }
 
-/// Expand a leading `~` (and `~/...`) to the user's home directory.
+/// The macOS user Trash directory (`~/.Trash`).
+pub fn user_trash_dir() -> PathBuf {
+    home_dir().join(".Trash")
+}
+
+/// True when `path` is inside the user's Trash folder (already trashed).
+pub fn is_in_user_trash(path: &Path) -> bool {
+    let trash = user_trash_dir();
+    path.starts_with(&trash) && path != trash
+}
+
 pub fn expand_tilde(input: &str) -> PathBuf {
     if input == "~" {
         return home_dir();
@@ -140,5 +150,13 @@ mod tests {
         assert_eq!(expand_tilde("~"), home);
         assert_eq!(expand_tilde("~/Library"), home.join("Library"));
         assert_eq!(expand_tilde("/tmp/x"), PathBuf::from("/tmp/x"));
+    }
+
+    #[test]
+    fn is_in_user_trash_detects_children_only() {
+        let trash = user_trash_dir();
+        assert!(is_in_user_trash(&trash.join("some-file")));
+        assert!(!is_in_user_trash(&trash));
+        assert!(!is_in_user_trash(Path::new("/tmp/foo")));
     }
 }

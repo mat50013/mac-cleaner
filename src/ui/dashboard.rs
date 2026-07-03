@@ -1,42 +1,161 @@
-//! Dashboard bar chart overview.
+//! Dashboard pie chart: reclaimable space per category.
 
 use crate::fs_util::human_size;
 use crate::model::{Category, ScanResults};
 use crate::ui::theme;
-use ratatui::layout::Rect;
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Bar, BarChart, BarGroup};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Paragraph, Widget};
 use ratatui::Frame;
+use std::f64::consts::TAU;
+
+struct Slice {
+    category: Category,
+    bytes: u64,
+    color: Color,
+    start: f64, // radians, 0 = 12 o'clock, clockwise
+    end: f64,
+}
 
 pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults) {
-    let max = Category::ALL
-        .iter()
-        .map(|c| results.total_bytes(*c))
-        .max()
-        .unwrap_or(1)
-        .max(1);
+    let block = theme::block(" Reclaimable by category ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
-    let bars: Vec<Bar> = Category::ALL
-        .iter()
-        .map(|cat| {
-            let bytes = results.total_bytes(*cat);
-            let label = format!("{} {}", cat.icon(), cat.title());
-            let value = ((bytes as f64 / max as f64) * 100.0) as u64;
-            Bar::default()
-                .value(value.max(if bytes > 0 { 1 } else { 0 }))
-                .label(Span::raw(format!("{label} {}", human_size(bytes))))
-                .style(Style::default().fg(theme::ACCENT))
-                .text_value(human_size(bytes))
-        })
-        .collect();
+    if inner.width < 4 || inner.height < 4 {
+        return;
+    }
 
-    let chart = BarChart::default()
-        .block(theme::block(" Reclaimable by category "))
-        .data(BarGroup::default().bars(&bars))
-        .bar_width(3)
-        .bar_gap(1)
-        .value_style(Style::default().fg(Color::White));
+    let total = results.total_reclaimable();
+    if total == 0 {
+        let msg = Paragraph::new(Line::from(vec![Span::styled(
+            "No reclaimable space found yet",
+            theme::dim(),
+        )]))
+        .centered();
+        f.render_widget(msg, inner);
+        return;
+    }
 
-    f.render_widget(chart, area);
+    let slices = build_slices(results, total);
+    if slices.is_empty() {
+        return;
+    }
+
+    let cols = Layout::horizontal([Constraint::Percentage(58), Constraint::Min(22)]).split(inner);
+
+    draw_pie(f.buffer_mut(), cols[0], &slices, total);
+    draw_legend(f, cols[1], &slices, total);
+}
+
+fn build_slices(results: &ScanResults, total: u64) -> Vec<Slice> {
+    let mut slices = Vec::new();
+    let mut angle = 0.0f64;
+
+    for cat in Category::ALL {
+        let bytes = results.total_bytes(cat);
+        if bytes == 0 {
+            continue;
+        }
+        let sweep = (bytes as f64 / total as f64) * TAU;
+        slices.push(Slice {
+            category: cat,
+            bytes,
+            color: theme::category_color(cat),
+            start: angle,
+            end: angle + sweep,
+        });
+        angle += sweep;
+    }
+
+    slices
+}
+
+/// Donut chart drawn cell-by-cell. Y is stretched 2× so the ring looks round
+/// in a typical terminal aspect ratio.
+fn draw_pie(buf: &mut Buffer, area: Rect, slices: &[Slice], total: u64) {
+    if area.width < 3 || area.height < 3 {
+        return;
+    }
+
+    let cx = area.x as f64 + (area.width as f64 - 1.0) / 2.0;
+    let cy = area.y as f64 + (area.height as f64 - 1.0) / 2.0;
+    let radius = (area.width as f64 / 2.0 - 1.0)
+        .min(area.height as f64 - 1.0)
+        .max(2.0);
+    let inner_r = radius * 0.42;
+    let inner_r2 = inner_r * inner_r;
+    let outer_r2 = radius * radius;
+
+    for y in area.y..area.y + area.height {
+        for x in area.x..area.x + area.width {
+            let dx = x as f64 - cx;
+            let dy = (y as f64 - cy) * 2.0; // compensate terminal cell aspect ratio
+            let dist2 = dx * dx + dy * dy;
+            if dist2 < inner_r2 || dist2 > outer_r2 {
+                continue;
+            }
+
+            let mut angle = dx.atan2(-dy); // 0 at 12 o'clock, clockwise
+            if angle < 0.0 {
+                angle += TAU;
+            }
+
+            if let Some(slice) = slices.iter().find(|s| angle >= s.start && angle < s.end) {
+                buf[(x, y)].set_symbol("█").set_style(
+                    Style::default()
+                        .fg(slice.color)
+                        .bg(theme::surface()),
+                );
+            }
+        }
+    }
+
+    // Total in the donut hole.
+    let label_w = human_size(total).len() as u16 + 2;
+    let label_h = 3u16;
+    let lx = cx as u16 - label_w / 2;
+    let ly = cy as u16 - label_h / 2;
+    let label_area = Rect {
+        x: lx.max(area.x),
+        y: ly.max(area.y),
+        width: label_w.min(area.width),
+        height: label_h.min(area.height),
+    };
+    let center = Paragraph::new(vec![
+        Line::from(Span::styled("Total", theme::dim())),
+        Line::from(Span::styled(
+            human_size(total),
+            theme::title_style(),
+        )),
+    ])
+    .centered();
+    center.render(label_area, buf);
+}
+
+fn draw_legend(f: &mut Frame, area: Rect, slices: &[Slice], total: u64) {
+    let mut lines: Vec<Line> = Vec::with_capacity(slices.len() + 1);
+    lines.push(Line::from(Span::styled(
+        "Breakdown",
+        theme::title_style(),
+    )));
+    lines.push(Line::from(""));
+
+    for slice in slices {
+        let pct = slice.bytes as f64 / total as f64 * 100.0;
+        lines.push(Line::from(vec![
+            Span::styled("██ ", Style::default().fg(slice.color)),
+            Span::styled(
+                format!("{} {}  ", slice.category.icon(), slice.category.title()),
+                theme::text(),
+            ),
+            Span::styled(human_size(slice.bytes), Style::default().fg(slice.color)),
+            Span::styled(format!("  ({pct:.0}%)",), theme::dim()),
+        ]));
+    }
+
+    let legend = Paragraph::new(lines);
+    f.render_widget(legend, area);
 }

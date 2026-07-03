@@ -20,7 +20,7 @@ pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults, current: Category)
             let is_current = *cat == current;
             let style = if is_current {
                 Style::default()
-                    .fg(theme::HIGHLIGHT)
+                    .fg(theme::highlight())
                     .add_modifier(Modifier::BOLD)
             } else {
                 theme::text()

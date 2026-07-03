@@ -53,10 +53,6 @@ fn clean_and_wait(items: Vec<ScanItem>, opts: CleanOptions) -> (u64, Vec<String>
     }
 }
 
-// ---------------------------------------------------------------------------
-// pure utilities
-// ---------------------------------------------------------------------------
-
 #[test]
 fn human_size_formats() {
     assert_eq!(human_size(1024 * 1024), "1.0 MB");
@@ -101,10 +97,6 @@ fn dir_real_size_recurses_and_dedups() {
     let total = dir_real_size(dir.path(), &mut seen);
     assert!(total >= 16384, "expected >= 16384, got {total}");
 }
-
-// ---------------------------------------------------------------------------
-// walk_parallel: the shared detection engine
-// ---------------------------------------------------------------------------
 
 #[test]
 fn walk_parallel_prunes_excluded_and_protected() {

@@ -77,7 +77,7 @@ pub fn draw(
                 "[ ]"
             };
             let row_style = if global_i == selected_row {
-                Style::default().bg(theme::SURFACE).add_modifier(Modifier::BOLD)
+                Style::default().bg(theme::surface()).add_modifier(Modifier::BOLD)
             } else {
                 theme::tier_style(item.tier)
             };

@@ -28,7 +28,7 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
             Span::styled("Reclaimable: ", theme::dim()),
             Span::styled(
                 human_size(reclaimable),
-                Style::default().fg(theme::SAFE).bold(),
+                Style::default().fg(theme::safe()).bold(),
             ),
         ])),
         block.inner(chunks[0]),
@@ -38,7 +38,7 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
     let _used_pct = (disk.used_ratio() * 100.0) as u16;
     let gauge = LineGauge::default()
         .block(theme::block(" Disk "))
-        .filled_style(Style::default().fg(theme::ACCENT))
+        .filled_style(Style::default().fg(theme::accent()))
         .filled_symbol("█")
         .unfilled_symbol("░")
         .label(format!(
@@ -50,8 +50,8 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
     f.render_widget(gauge, chunks[1]);
 
     let hint = Paragraph::new(Line::from(Span::styled(
-        "Press ? for help  |  r rescan",
-        theme::dim(),
+        "Press [?] for help  |  [r] Rescan",
+        theme::text(),
     )));
     f.render_widget(hint, chunks[2]);
 }

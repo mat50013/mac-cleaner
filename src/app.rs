@@ -10,6 +10,7 @@ use crate::scan::{run_all, ScanContext};
 use crate::ui::modal::Modal;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
 use ratatui::Terminal;
 use std::collections::HashSet;
 use std::io;
@@ -33,6 +34,7 @@ pub struct App {
     finished: HashSet<Category>,
     worker: WorkerSender,
     dry_run: bool,
+    pending_clean_permanent: bool,
 }
 
 impl App {
@@ -65,6 +67,7 @@ impl App {
             finished: HashSet::new(),
             worker,
             dry_run,
+            pending_clean_permanent: false,
         }
     }
 
@@ -107,6 +110,10 @@ impl App {
                 match ev {
                     Event::Tick => {
                         self.tick = self.tick.wrapping_add(1);
+                    }
+                    Event::Resize => {
+                        let size = terminal.size()?;
+                        terminal.resize(Rect::new(0, 0, size.width, size.height))?;
                     }
                     Event::Worker(msg) => self.on_worker(msg),
                     Event::Input(input) => {
@@ -197,8 +204,9 @@ impl App {
             Modal::Help => {
                 self.modal = Modal::None;
             }
-            Modal::ConfirmClean { .. } => match key.code {
+            Modal::ConfirmClean { permanent, .. } => match key.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.pending_clean_permanent = *permanent;
                     self.modal = Modal::None;
                     self.do_clean();
                 }
@@ -238,15 +246,8 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => return true,
             KeyCode::Char('?') => self.modal = Modal::Help,
             KeyCode::Char('r') => self.start_scan(),
-            KeyCode::Char('d') => {
-                let count = self.results.selected_items().len();
-                if count > 0 {
-                    self.modal = Modal::ConfirmClean {
-                        count,
-                        bytes: self.results.selected_bytes(),
-                    };
-                }
-            }
+            KeyCode::Char('d') => self.open_clean_confirm(false),
+            KeyCode::Char('D') => self.open_clean_confirm(true),
             KeyCode::Char(' ') => self.toggle_current(),
             KeyCode::Char('a') => self.select_all_category(true),
             KeyCode::Char('A') => self.select_all_category(false),
@@ -377,6 +378,27 @@ impl App {
         }
     }
 
+    fn open_clean_confirm(&mut self, force_permanent: bool) {
+        let selected: Vec<_> = self.results.selected_items();
+        if selected.is_empty() {
+            return;
+        }
+        let empty_trash = selected
+            .iter()
+            .all(|i| matches!(i.action, crate::model::ItemAction::EmptyTrash));
+        let in_trash = selected
+            .iter()
+            .all(|i| crate::fs_util::is_in_user_trash(&i.path) || i.category == Category::Trash);
+        let permanent = force_permanent || empty_trash || in_trash;
+        self.pending_clean_permanent = permanent;
+        self.modal = Modal::ConfirmClean {
+            count: selected.len(),
+            bytes: self.results.selected_bytes(),
+            permanent,
+            empty_trash,
+        };
+    }
+
     fn do_clean(&mut self) {
         let selected: Vec<_> = self
             .results
@@ -390,12 +412,15 @@ impl App {
             return;
         }
         self.cleaning = true;
+        let permanent = self.pending_clean_permanent
+            || self.config.delete_mode == DeleteMode::Permanent;
         let opts = CleanOptions {
-            permanent: self.config.delete_mode == DeleteMode::Permanent,
+            permanent,
             dry_run: self.dry_run,
             mode: self.config.delete_mode,
         };
         run_clean(selected, opts, self.worker.clone());
+        self.pending_clean_permanent = false;
     }
 
     fn remove_cleaned(&mut self) {
