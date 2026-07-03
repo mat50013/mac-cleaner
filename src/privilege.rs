@@ -28,6 +28,17 @@ pub fn is_root() -> bool {
     unsafe { libc::geteuid() == 0 }
 }
 
+/// Login user that launched the process (set by `sudo` as `SUDO_USER`).
+pub fn invoking_user() -> Option<String> {
+    std::env::var("SUDO_USER")
+        .ok()
+        .filter(|u| is_valid_login_user(u))
+}
+
+fn is_valid_login_user(name: &str) -> bool {
+    !name.is_empty() && name != "root"
+}
+
 /// If we are not root and elevation is permitted, re-exec through `sudo` and
 /// exit this process with the child's status. Returns normally only when we
 /// stay unprivileged (already root, disabled, or no TTY to prompt on).
@@ -108,6 +119,18 @@ fn probe_read(path: &Path) -> Option<bool> {
 /// Open the Full Disk Access pane in System Settings.
 pub fn open_fda_settings() {
     let _ = Command::new("open").arg(FDA_SETTINGS_URL).status();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_login_user;
+
+    #[test]
+    fn invoking_user_rejects_root_and_empty() {
+        assert!(!is_valid_login_user(""));
+        assert!(!is_valid_login_user("root"));
+        assert!(is_valid_login_user("matei"));
+    }
 }
 
 /// Whether an executable is resolvable on `PATH` (via `command -v`).

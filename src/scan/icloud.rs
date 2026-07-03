@@ -20,7 +20,7 @@ pub fn scan(_ctx: &ScanContext) -> Result<Vec<ScanItem>> {
 }
 
 fn walk_icloud(dir: &std::path::Path, items: &mut Vec<ScanItem>, depth: usize) {
-    if depth > 8 {
+    if depth > 12 {
         return;
     }
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -47,8 +47,8 @@ fn walk_icloud(dir: &std::path::Path, items: &mut Vec<ScanItem>, depth: usize) {
             continue;
         }
         let bytes = real_size(&md);
-        if bytes < 50 * 1024 * 1024 {
-            continue; // only surface files >= 50 MB
+        if bytes < 10 * 1024 * 1024 {
+            continue; // only surface files >= 10 MB
         }
 
         // A materialized file has no sibling .icloud placeholder.

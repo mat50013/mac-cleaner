@@ -388,6 +388,9 @@ impl App {
         let empty_trash = selected
             .iter()
             .all(|i| matches!(i.action, crate::model::ItemAction::EmptyTrash));
+        let evict_only = selected
+            .iter()
+            .all(|i| matches!(i.action, crate::model::ItemAction::Evict));
         let in_trash = selected
             .iter()
             .all(|i| crate::fs_util::is_in_user_trash(&i.path) || i.category == Category::Trash);
@@ -398,6 +401,7 @@ impl App {
             bytes: self.results.selected_bytes(),
             permanent,
             empty_trash,
+            evict_only,
         };
     }
 

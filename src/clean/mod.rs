@@ -69,15 +69,8 @@ fn clean_one(item: &ScanItem, opts: &CleanOptions) -> Result<u64, String> {
             Ok(bytes)
         }
         ItemAction::Evict => {
-            let status = Command::new("brctl")
-                .args(["evict", &item.path.to_string_lossy()])
-                .status()
-                .map_err(|e| e.to_string())?;
-            if status.success() {
-                Ok(bytes)
-            } else {
-                Err("brctl evict failed".into())
-            }
+            evict_icloud(&item.path)?;
+            Ok(bytes)
         }
         ItemAction::EmptyTrash => {
             empty_trash()?;
@@ -94,6 +87,35 @@ fn clean_one(item: &ScanItem, opts: &CleanOptions) -> Result<u64, String> {
             } else {
                 Err(format!("docker {} failed", args.join(" ")))
             }
+        }
+    }
+}
+
+/// `brctl evict` must run as the iCloud account owner, not root.
+fn evict_icloud(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy();
+    let output = if crate::privilege::is_root() {
+        let user = crate::privilege::invoking_user().ok_or_else(|| {
+            "iCloud evict cannot run as root (launch via sudo or use --no-elevate)".to_string()
+        })?;
+        Command::new("sudo")
+            .args(["-u", &user, "brctl", "evict", &path_str])
+            .output()
+            .map_err(|e| e.to_string())?
+    } else {
+        Command::new("brctl")
+            .args(["evict", &path_str])
+            .output()
+            .map_err(|e| e.to_string())?
+    };
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err("brctl evict failed".into())
+        } else {
+            Err(stderr)
         }
     }
 }

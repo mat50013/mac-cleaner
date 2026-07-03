@@ -15,6 +15,7 @@ pub enum Modal {
         bytes: u64,
         permanent: bool,
         empty_trash: bool,
+        evict_only: bool,
     },
     CleanProgress { done: usize, total: usize, freed: u64 },
     CleanDone { freed: u64, failures: Vec<String> },
@@ -31,10 +32,18 @@ pub fn draw(f: &mut Frame, area: Rect, modal: &Modal) {
             bytes,
             permanent,
             empty_trash,
+            evict_only,
         } => {
             let body = if *empty_trash {
                 format!(
                     "Permanently empty Trash ({})?\n\nThis cannot be undone.\n\n[y] Yes  [n] No",
+                    human_size(*bytes)
+                )
+            } else if *evict_only {
+                format!(
+                    "Evict local copy of {count} items ({})?\n\n\
+                     Files stay in iCloud — re-download from Finder anytime.\n\n\
+                     [y] Yes  [n] No",
                     human_size(*bytes)
                 )
             } else if *permanent {
