@@ -26,6 +26,9 @@ struct Palette {
     cat_icloud: Color,
     cat_large: Color,
     cat_trash: Color,
+    modal_backdrop: Color,
+    modal_shadow: Color,
+    modal_elevated: Color,
 }
 
 static PALETTE: OnceLock<Palette> = OnceLock::new();
@@ -91,6 +94,9 @@ impl Palette {
             cat_icloud: Color::Rgb(90, 210, 230),
             cat_large: Color::Rgb(255, 120, 175),
             cat_trash: Color::Rgb(220, 110, 110),
+            modal_backdrop: Color::Rgb(10, 10, 16),
+            modal_shadow: Color::Rgb(4, 4, 8),
+            modal_elevated: Color::Rgb(44, 44, 58),
         }
     }
 
@@ -112,6 +118,9 @@ impl Palette {
             cat_icloud: Color::Indexed(87),
             cat_large: Color::Indexed(213),
             cat_trash: Color::Indexed(203),
+            modal_backdrop: Color::Indexed(233),
+            modal_shadow: Color::Indexed(232),
+            modal_elevated: Color::Indexed(237),
         }
     }
 }
@@ -174,6 +183,23 @@ pub fn block(title: &str) -> ratatui::widgets::Block<'_> {
         .title(title)
         .title_style(title_style())
         .style(Style::default().fg(p.border).bg(p.surface))
+}
+
+pub fn modal_backdrop() -> Style {
+    Style::default().bg(palette().modal_backdrop)
+}
+
+pub fn modal_shadow() -> Style {
+    Style::default().bg(palette().modal_shadow)
+}
+
+pub fn modal_block(title: &str) -> ratatui::widgets::Block<'_> {
+    let p = palette();
+    ratatui::widgets::Block::bordered()
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .title(title)
+        .title_style(title_style())
+        .style(Style::default().fg(p.accent).bg(p.modal_elevated))
 }
 
 #[cfg(test)]

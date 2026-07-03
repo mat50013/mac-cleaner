@@ -25,18 +25,12 @@ pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults, current: Category)
             } else {
                 theme::text()
             };
-            let hint = if is_current {
-                "  press a: select all"
-            } else {
-                ""
-            };
             ListItem::new(Line::from(vec![
                 Span::styled(format!("{} ", cat.icon()), style),
                 Span::styled(cat.title(), style),
                 Span::raw("  "),
                 Span::styled(human_size(bytes), theme::dim()),
                 Span::raw(format!("  {selected}/{total}")),
-                Span::styled(hint, theme::dim()),
             ]))
         })
         .collect();

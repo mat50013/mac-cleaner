@@ -3,7 +3,7 @@
 use crate::fs_util::human_size;
 use crate::ui::theme;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::widgets::{Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 #[derive(Debug, Clone)]
@@ -92,7 +92,18 @@ pub fn draw(f: &mut Frame, area: Rect, modal: &Modal) {
 }
 
 fn draw_centered(f: &mut Frame, area: Rect, title: &str, body: &str) {
-    let popup = centered_rect(60, 40, area);
+    draw_centered_sized(f, area, title, body, 60, 40);
+}
+
+fn draw_centered_sized(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    body: &str,
+    pct_x: u16,
+    pct_y: u16,
+) {
+    let popup = centered_rect(pct_x, pct_y, area);
     f.render_widget(Clear, popup);
     let block = theme::block(title);
     let inner = block.inner(popup);
@@ -105,10 +116,95 @@ fn draw_centered(f: &mut Frame, area: Rect, title: &str, body: &str) {
 
 fn draw_help(f: &mut Frame, area: Rect) {
     let text = "\
-Navigation\n  ↑/↓ or j/k  move selection\n  Tab / Shift+Tab  switch category\n\n\
-Selection\n  Space       toggle item\n  a           select ALL in category\n  A           deselect category\n  s           select all Safe items\n  n           clear all selections\n  i           invert category selection\n  Enter       flip duplicate keeper\n\n\
-Actions\n  d           move selected to Trash\n  D           delete selected forever\n  r           rescan\n  ?           this help\n  q / Esc     quit\n";
-    draw_centered(f, area, "Help", text);
+Overview\n\
+  After scan: pie chart shows reclaimable space per category.\n\
+  Tab / Shift+Tab: switch category and open its item list.\n\
+  r: rescan (use after cleaning to refresh Trash, etc.)\n\n\
+Categories\n\
+  Caches      app & dev caches (Docker prune when running)\n\
+  Logs        log files and log folders\n\
+  Duplicates  identical files — oldest kept by default\n\
+  iCloud      local copies that can be evicted to iCloud\n\
+  Large Files big files to review manually\n\
+  Trash Bin   items already in Trash — always deleted forever\n\n\
+Safety colors\n\
+  green  = safe, auto-selected (regenerable caches/logs)\n\
+  yellow = review first (moderate risk)\n\
+  red    = risky / duplicate keeper (not selected by default)\n\n\
+Navigation\n\
+  ↑/↓ or j/k       move row\n\
+  Tab / Shift+Tab  previous / next category\n\n\
+Selection\n\
+  Space   toggle current item\n\
+  a       select ALL in this category\n\
+  A       deselect entire category\n\
+  s       select all Safe items (all categories)\n\
+  n       clear all selections\n\
+  i       invert selection in category\n\
+  Enter   Duplicates: pick which copy to keep\n\
+          Caches: start Docker if shown\n\n\
+Clean\n\
+  d   move selected items to Trash (reversible in Finder)\n\
+  D   delete selected FOREVER (cannot undo)\n\
+  y/n confirm in the dialog\n\n\
+Tips\n\
+  Trash Bin items are always permanent delete, even with d.\n\
+  After cleaning caches/logs with d, rescan then empty Trash Bin.\n\
+  ? or any key — close help    q / Esc — quit\n";
+    draw_popup_sized(f, area, " Help ", text, 72, 78);
+}
+
+/// Dim backdrop + drop shadow + elevated panel (help modal).
+fn draw_popup_sized(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    body: &str,
+    pct_x: u16,
+    pct_y: u16,
+) {
+    f.render_widget(Block::default().style(theme::modal_backdrop()), area);
+
+    let popup = centered_rect(pct_x, pct_y, area);
+
+    const SHADOW_DX: u16 = 2;
+    const SHADOW_DY: u16 = 1;
+    let shadow = offset_rect(popup, SHADOW_DX, SHADOW_DY);
+    f.render_widget(
+        Block::default().style(theme::modal_shadow()),
+        clip_rect(shadow, area),
+    );
+
+    f.render_widget(Clear, popup);
+    let block = theme::modal_block(title);
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let para = Paragraph::new(body)
+        .wrap(Wrap { trim: true })
+        .style(theme::text());
+    f.render_widget(para, inner);
+}
+
+fn offset_rect(r: Rect, dx: u16, dy: u16) -> Rect {
+    Rect {
+        x: r.x.saturating_add(dx),
+        y: r.y.saturating_add(dy),
+        width: r.width,
+        height: r.height,
+    }
+}
+
+fn clip_rect(inner: Rect, outer: Rect) -> Rect {
+    let x = inner.x.max(outer.x);
+    let y = inner.y.max(outer.y);
+    let right = inner.x.saturating_add(inner.width).min(outer.right());
+    let bottom = inner.y.saturating_add(inner.height).min(outer.bottom());
+    Rect {
+        x,
+        y,
+        width: right.saturating_sub(x),
+        height: bottom.saturating_sub(y),
+    }
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

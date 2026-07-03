@@ -299,6 +299,8 @@ impl App {
             for item in items.iter_mut() {
                 if item.tier == SafetyTier::Safe && item.selectable() {
                     item.selected = true;
+                } else {
+                    item.selected = false;
                 }
             }
         }

@@ -9,12 +9,12 @@ use ratatui::Terminal;
 use std::io::{self, stdout, Stdout};
 
 /// Minimum columns×rows before the UI refuses to render (shows a resize hint).
-pub const MIN_WIDTH: u16 = 100;
-pub const MIN_HEIGHT: u16 = 24;
+pub const MIN_WIDTH: u16 = 160;
+pub const MIN_HEIGHT: u16 = 50;
 
 /// Requested window size on startup (honoured by iTerm2/WezTerm; often ignored by Terminal.app).
-pub const PREFERRED_WIDTH: u16 = 120;
-pub const PREFERRED_HEIGHT: u16 = 40;
+pub const PREFERRED_WIDTH: u16 = 160;
+pub const PREFERRED_HEIGHT: u16 = 50;
 
 pub fn is_large_enough(width: u16, height: u16) -> bool {
     width >= MIN_WIDTH && height >= MIN_HEIGHT
