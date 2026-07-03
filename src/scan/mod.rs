@@ -112,19 +112,67 @@ pub fn path_bytes(path: &Path) -> u64 {
     dir_real_size(path, &mut seen)
 }
 
-/// Build a human label from the path by walking up to find a meaningful parent.
+/// Build a human label from the path.
+///
+/// - **Files** → relative path from home (e.g. `Downloads/installer.dmg`).
+/// - **Directories** with a category suffix → `path/to/dir — cache`.
+/// - **Suffix equals basename** (trash/log files) → relative path only.
 pub fn label_for(path: &Path, suffix: &str) -> String {
     let home = home_dir();
-    let display = path.strip_prefix(&home).unwrap_or(path);
-    let parent = path
-        .parent()
-        .and_then(|p| p.file_name())
+    let rel = path
+        .strip_prefix(&home)
+        .unwrap_or(path)
+        .display()
+        .to_string();
+    let fname = path
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".into());
+        .unwrap_or_default();
+    let is_file = std::fs::symlink_metadata(path)
+        .map(|m| m.is_file())
+        .unwrap_or(false);
+
     if suffix.is_empty() {
-        format!("{parent} — {}", display.display())
+        let parent = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown".into());
+        format!("{parent} — {rel}")
+    } else if suffix == fname || is_file || is_generic_category_suffix(suffix) {
+        rel
     } else {
-        format!("{parent} — {suffix}")
+        format!("{rel} — {suffix}")
+    }
+}
+
+fn is_generic_category_suffix(suffix: &str) -> bool {
+    matches!(suffix, "large file" | "cache" | "logs")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_for_file_uses_relative_path() {
+        let home = home_dir();
+        let path = home.join("Downloads/big-movie.mp4");
+        assert_eq!(label_for(&path, "large file"), "Downloads/big-movie.mp4");
+    }
+
+    #[test]
+    fn label_for_dir_uses_relative_path_for_cache() {
+        let home = home_dir();
+        let path = home.join("Library/Caches/com.example.app");
+        assert_eq!(label_for(&path, "cache"), "Library/Caches/com.example.app");
+    }
+
+    #[test]
+    fn label_for_trash_item_uses_relative_path() {
+        let home = home_dir();
+        let path = home.join(".Trash/old.dmg");
+        assert_eq!(label_for(&path, "old.dmg"), ".Trash/old.dmg");
     }
 }
 

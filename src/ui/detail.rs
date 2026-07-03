@@ -2,12 +2,55 @@
 
 use crate::fs_util::human_size;
 use crate::model::{Category, ScanResults};
+use crate::ui::footer;
 use crate::ui::theme;
-use ratatui::layout::{Constraint, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, Table};
 use ratatui::Frame;
+
+/// Detail panel rect (right side of body) for a given terminal size.
+pub fn panel_rect(terminal_width: u16, terminal_height: u16) -> Rect {
+    let footer_h = footer::outer_height(terminal_width);
+    let chunks = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Min(10),
+        Constraint::Length(footer_h),
+    ])
+    .split(Rect {
+        x: 0,
+        y: 0,
+        width: terminal_width,
+        height: terminal_height,
+    });
+    Layout::horizontal([Constraint::Length(36), Constraint::Min(20)]).split(chunks[1])[1]
+}
+
+/// Layout metrics for the detail panel (derived from the actual draw area).
+pub struct DetailMetrics {
+    pub visible_data_rows: usize,
+}
+
+pub fn metrics(detail_panel: Rect) -> DetailMetrics {
+    DetailMetrics {
+        visible_data_rows: visible_data_rows(detail_panel),
+    }
+}
+
+/// Number of data rows shown in the detail table (excludes the column header row).
+pub fn visible_data_rows(detail_panel: Rect) -> usize {
+    let block = theme::block(""); // title sits on border; same inner size as a titled block
+    let inner = block.inner(detail_panel);
+    let banner_h = selection_hints(inner.width).len() as u16;
+    let table_h = inner.height.saturating_sub(banner_h);
+    // One row is the table column header; the rest are data rows.
+    usize::from(table_h.saturating_sub(1).max(1))
+}
+
+pub fn visible_data_rows_for_terminal(terminal_width: u16, terminal_height: u16) -> usize {
+    visible_data_rows(panel_rect(terminal_width, terminal_height))
+}
 
 pub fn draw(
     f: &mut Frame,
@@ -16,6 +59,7 @@ pub fn draw(
     category: Category,
     selected_row: usize,
     scroll: usize,
+    visible: usize,
 ) {
     let items = results.items_for(category);
     let _max_bytes = items.iter().map(|i| i.real_bytes).max().unwrap_or(1);
@@ -58,9 +102,8 @@ pub fn draw(
         .iter()
         .enumerate()
         .skip(scroll)
-        .take(table_area.height.saturating_sub(2) as usize)
+        .take(visible)
         .map(|(i, item)| {
-            let global_i = i + scroll;
             let check = if !item.selectable() {
                 "[—]"
             } else if item.selected {
@@ -68,7 +111,7 @@ pub fn draw(
             } else {
                 "[ ]"
             };
-            let row_style = if global_i == selected_row {
+            let row_style = if i == selected_row {
                 Style::default().bg(theme::surface()).add_modifier(Modifier::BOLD)
             } else {
                 theme::tier_style(item.tier)
@@ -102,7 +145,7 @@ pub fn draw(
     // Draw size bars over the bar column (approximate overlay).
     // Simpler: size is in its own column; bars shown in label truncation.
 
-    if items.len() > table_area.height as usize {
+    if items.len() > visible {
         let mut state = ratatui::widgets::ScrollbarState::new(items.len()).position(scroll);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(Some("↑"))
@@ -155,5 +198,33 @@ mod tests {
     fn compact_hints_fit_narrow_panels() {
         let line = &selection_hints(30)[0];
         assert!(line.spans[0].content.len() <= 30);
+    }
+
+    #[test]
+    fn visible_data_rows_is_at_least_one() {
+        let panel = Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 20,
+        };
+        assert!(visible_data_rows(panel) >= 1);
+    }
+
+    #[test]
+    fn taller_panel_shows_more_rows() {
+        let short = Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 14,
+        };
+        let tall = Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 30,
+        };
+        assert!(visible_data_rows(tall) > visible_data_rows(short));
     }
 }

@@ -8,6 +8,8 @@ use crate::privilege::{open_fda_settings, PrivilegeInfo};
 use crate::scan::caches::start_docker_and_wait;
 use crate::scan::{run_all, ScanContext};
 use crate::ui::modal::Modal;
+use crate::ui::terminal::{PREFERRED_HEIGHT, PREFERRED_WIDTH};
+use crate::ui::detail;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
@@ -35,6 +37,9 @@ pub struct App {
     worker: WorkerSender,
     dry_run: bool,
     pending_clean_permanent: bool,
+    terminal_width: u16,
+    terminal_height: u16,
+    pub detail_visible_rows: usize,
 }
 
 impl App {
@@ -68,6 +73,12 @@ impl App {
             worker,
             dry_run,
             pending_clean_permanent: false,
+            terminal_width: PREFERRED_WIDTH,
+            terminal_height: PREFERRED_HEIGHT,
+            detail_visible_rows: detail::visible_data_rows_for_terminal(
+                PREFERRED_WIDTH,
+                PREFERRED_HEIGHT,
+            ),
         }
     }
 
@@ -104,6 +115,10 @@ impl App {
         self.start_scan();
 
         loop {
+            if let Ok(size) = terminal.size() {
+                self.terminal_width = size.width;
+                self.terminal_height = size.height;
+            }
             terminal.draw(|f| crate::ui::draw(f, self))?;
 
             if let Some(ev) = handler.next() {
@@ -113,6 +128,8 @@ impl App {
                     }
                     Event::Resize => {
                         let size = terminal.size()?;
+                        self.terminal_width = size.width;
+                        self.terminal_height = size.height;
                         terminal.resize(Rect::new(0, 0, size.width, size.height))?;
                     }
                     Event::Worker(msg) => self.on_worker(msg),
@@ -331,12 +348,15 @@ impl App {
         }
         let row = self.selected_row as i32 + delta;
         self.selected_row = row.clamp(0, len as i32 - 1) as usize;
-        if self.selected_row < self.scroll {
-            self.scroll = self.selected_row;
-        }
-        let visible = 20;
-        if self.selected_row >= self.scroll + visible {
-            self.scroll = self.selected_row.saturating_sub(visible - 1);
+
+        let visible = self.detail_visible_rows.max(1);
+        let max_scroll = len.saturating_sub(visible);
+
+        // Scroll one line only when the selection crosses the visible edge.
+        if delta > 0 && self.selected_row >= self.scroll + visible {
+            self.scroll = (self.scroll + 1).min(max_scroll);
+        } else if delta < 0 && self.selected_row < self.scroll {
+            self.scroll = self.scroll.saturating_sub(1);
         }
     }
 
@@ -529,6 +549,62 @@ mod tests {
         assert_eq!(a.selected_row, 1);
         a.move_row(-50); // clamps to first row
         assert_eq!(a.selected_row, 0);
+    }
+
+    #[test]
+    fn move_row_scrolls_one_line_when_selection_leaves_view() {
+        let mut a = app();
+        let visible = a.detail_visible_rows;
+        let count = visible + 5;
+        a.results.items.insert(
+            Category::LargeFiles,
+            (0..count)
+                .map(|i| item(i as u64 * 1000, SafetyTier::Moderate))
+                .collect(),
+        );
+        a.current_category = Category::LargeFiles;
+
+        for _ in 0..visible.saturating_sub(1) {
+            a.move_row(1);
+        }
+        assert_eq!(a.selected_row, visible - 1);
+        assert_eq!(a.scroll, 0);
+
+        a.move_row(1);
+        assert_eq!(a.selected_row, visible);
+        assert_eq!(a.scroll, 1);
+
+        a.move_row(-1);
+        assert_eq!(a.selected_row, visible - 1);
+        assert_eq!(a.scroll, 1);
+
+        while a.selected_row > a.scroll {
+            a.move_row(-1);
+        }
+        assert_eq!(a.selected_row, a.scroll);
+
+        a.move_row(-1);
+        assert_eq!(a.scroll, 0);
+    }
+
+    #[test]
+    fn move_row_keeps_selection_on_screen() {
+        let mut a = app();
+        let visible = a.detail_visible_rows;
+        let count = visible + 5;
+        a.results.items.insert(
+            Category::LargeFiles,
+            (0..count)
+                .map(|i| item(i as u64 * 1000, SafetyTier::Moderate))
+                .collect(),
+        );
+        a.current_category = Category::LargeFiles;
+
+        for _ in 0..count - 1 {
+            a.move_row(1);
+        }
+        assert_eq!(a.selected_row, count - 1);
+        assert!(a.selected_row < a.scroll + visible);
     }
 
     #[test]

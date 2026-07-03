@@ -17,7 +17,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use terminal::{is_large_enough, MIN_HEIGHT, MIN_WIDTH, PREFERRED_HEIGHT, PREFERRED_WIDTH};
 
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
     if !is_large_enough(area.width, area.height) {
         draw_too_small(f, area);
@@ -45,6 +45,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.show_dashboard && !app.scanning {
         dashboard::draw(f, body[1], &app.results);
     } else {
+        let metrics = detail::metrics(body[1]);
+        app.detail_visible_rows = metrics.visible_data_rows;
         detail::draw(
             f,
             body[1],
@@ -52,6 +54,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             app.current_category,
             app.selected_row,
             app.scroll,
+            metrics.visible_data_rows,
         );
     }
 
