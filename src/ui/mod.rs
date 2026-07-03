@@ -24,10 +24,11 @@ pub fn draw(f: &mut Frame, app: &App) {
         return;
     }
 
+    let footer_h = footer::outer_height(area.width);
     let chunks = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(10),
-        Constraint::Length(4),
+        Constraint::Length(footer_h),
     ])
     .split(area);
 
@@ -63,7 +64,6 @@ pub fn draw(f: &mut Frame, app: &App) {
         app.scanning,
         app.tick,
         &app.status_line,
-        area.width,
     );
 
     modal::draw(f, area, &app.modal);

@@ -6,7 +6,7 @@ use crate::ui::theme;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Cell, Row, Scrollbar, ScrollbarOrientation, Table};
+use ratatui::widgets::{Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, Table};
 use ratatui::Frame;
 
 pub fn draw(
@@ -20,35 +20,27 @@ pub fn draw(
     let items = results.items_for(category);
     let _max_bytes = items.iter().map(|i| i.real_bytes).max().unwrap_or(1);
 
-    let banner = Line::from(vec![
-        Span::styled(
-            "Press a to select ALL in this category",
-            theme::dim(),
-        ),
-        Span::raw("  |  "),
-        Span::styled("Press s to select all Safe items", theme::dim()),
-        Span::raw("  |  "),
-        Span::styled("[Space] toggle", theme::dim()),
-    ]);
-
     let title = format!(" {} ", category.title());
     let block = theme::block(&title);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-  let banner_area = Rect {
+    let banner_lines = selection_hints(inner.width);
+    let banner_h = banner_lines.len() as u16;
+
+    let banner_area = Rect {
         x: inner.x,
         y: inner.y,
         width: inner.width,
-        height: 1,
+        height: banner_h,
     };
-    f.render_widget(ratatui::widgets::Paragraph::new(banner), banner_area);
+    f.render_widget(Paragraph::new(banner_lines), banner_area);
 
     let table_area = Rect {
         x: inner.x,
-        y: inner.y + 1,
+        y: inner.y + banner_h,
         width: inner.width,
-        height: inner.height.saturating_sub(1),
+        height: inner.height.saturating_sub(banner_h),
     };
 
     let header = Row::new(vec![
@@ -116,5 +108,52 @@ pub fn draw(
             .begin_symbol(Some("↑"))
             .end_symbol(Some("↓"));
         f.render_stateful_widget(scrollbar, table_area, &mut state);
+    }
+}
+
+/// Selection hints above the table — one or two lines depending on width.
+fn selection_hints(width: u16) -> Vec<Line<'static>> {
+    const ONE: &str = "[a] All in category  [s] Safe  [Space] toggle";
+    const TWO_TOP: &str = "[a] All in category  [s] All Safe items";
+    const TWO_BOT: &str = "[Space] toggle selection";
+    const COMPACT: &str = "[a] all  [s] safe  [Space]";
+
+    let w = width as usize;
+    let dim = theme::dim();
+    if fits(ONE, w) {
+        vec![Line::from(Span::styled(ONE, dim))]
+    } else if fits(TWO_TOP, w) && fits(TWO_BOT, w) {
+        vec![
+            Line::from(Span::styled(TWO_TOP, dim)),
+            Line::from(Span::styled(TWO_BOT, dim)),
+        ]
+    } else {
+        vec![Line::from(Span::styled(COMPACT, dim))]
+    }
+}
+
+fn fits(text: &str, width: usize) -> bool {
+    text.len() <= width
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selection_hints_one_line_when_wide() {
+        assert_eq!(selection_hints(80).len(), 1);
+    }
+
+    #[test]
+    fn selection_hints_two_lines_when_medium() {
+        // ONE is 45 chars; between 39 and 44 only the two-line split fits.
+        assert_eq!(selection_hints(42).len(), 2);
+    }
+
+    #[test]
+    fn compact_hints_fit_narrow_panels() {
+        let line = &selection_hints(30)[0];
+        assert!(line.spans[0].content.len() <= 30);
     }
 }
