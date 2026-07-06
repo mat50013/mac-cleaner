@@ -4,9 +4,9 @@ use crate::clean::{CleanOptions, run_clean};
 use crate::config::{Config, DeleteMode};
 use crate::event::{DiskInfo, Event, EventHandler, WorkerMsg, WorkerSender};
 use crate::model::{Category, MainView, SafetyTier, ScanResults, ScanStatus};
-use crate::scan::read_disk_info;
 use crate::privilege::{PrivilegeInfo, open_fda_settings};
 use crate::scan::caches::start_docker_and_wait;
+use crate::scan::read_disk_info;
 use crate::scan::{ScanContext, run_all};
 use crate::ui::detail;
 use crate::ui::modal::Modal;
@@ -372,11 +372,7 @@ impl App {
         let n = 1 + self.categories.len();
         let pos = match self.view {
             MainView::Dashboard => 0,
-            MainView::Category(c) => 1 + self
-                .categories
-                .iter()
-                .position(|x| *x == c)
-                .unwrap_or(0),
+            MainView::Category(c) => 1 + self.categories.iter().position(|x| *x == c).unwrap_or(0),
         } as i32;
         let next = (pos + delta).rem_euclid(n as i32) as usize;
         if next == 0 {
