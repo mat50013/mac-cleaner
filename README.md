@@ -1,10 +1,10 @@
 # mac-cleaner
 
-![mac-cleaner dashboard — reclaimable space by category](assets/dashboard.png)
-
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS-blue?style=flat-square)](https://www.apple.com/macos/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](#license)
+
+![mac-cleaner dashboard — reclaimable space by category](assets/dashboard.png)
 
 Data-driven macOS cleanup, with a fast terminal UI and a simple rule: **review the evidence before deleting anything**.
 
