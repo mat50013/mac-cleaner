@@ -126,8 +126,8 @@ fn draw_centered_sized(f: &mut Frame, area: Rect, title: &str, body: &str, pct_x
 fn draw_help(f: &mut Frame, area: Rect) {
     let text = "\
 Overview\n\
-  After scan: pie chart shows reclaimable space per category.\n\
-  Tab / Shift+Tab: switch category and open its item list.\n\
+  Dashboard: pie chart of reclaimable space per category (updates as you clean).\n\
+  Tab / Shift+Tab: cycle Dashboard and category item lists.\n\
   r: rescan (use after cleaning to refresh Trash, etc.)\n\n\
 Categories\n\
   Caches      app & dev caches (Docker prune when running)\n\
@@ -142,7 +142,7 @@ Safety colors\n\
   red    = risky / duplicate keeper (not selected by default)\n\n\
 Navigation\n\
   ↑/↓ or j/k       move row\n\
-  Tab / Shift+Tab  previous / next category\n\n\
+  Tab / Shift+Tab  Dashboard / previous / next category\n\n\
 Selection\n\
   Space   toggle current item\n\
   a       select ALL in this category\n\

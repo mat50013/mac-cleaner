@@ -11,6 +11,7 @@ pub mod theme;
 pub mod widgets;
 
 use crate::app::App;
+use crate::model::MainView;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::{Line, Span};
@@ -42,23 +43,24 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let body = Layout::horizontal([Constraint::Length(36), Constraint::Min(20)]).split(chunks[1]);
 
-    if app.show_dashboard && !app.scanning {
-        dashboard::draw(f, body[1], &app.results);
-    } else {
-        let metrics = detail::metrics(body[1]);
-        app.detail_visible_rows = metrics.visible_data_rows;
-        detail::draw(
-            f,
-            body[1],
-            &app.results,
-            app.current_category,
-            app.selected_row,
-            app.scroll,
-            metrics.visible_data_rows,
-        );
+    match app.view {
+        MainView::Dashboard => dashboard::draw(f, body[1], &app.results),
+        MainView::Category(cat) => {
+            let metrics = detail::metrics(body[1]);
+            app.detail_visible_rows = metrics.visible_data_rows;
+            detail::draw(
+                f,
+                body[1],
+                &app.results,
+                cat,
+                app.selected_row,
+                app.scroll,
+                metrics.visible_data_rows,
+            );
+        }
     }
 
-    sidebar::draw(f, body[0], &app.results, app.current_category);
+    sidebar::draw(f, body[0], &app.results, app.view);
 
     footer::draw(
         f,

@@ -60,7 +60,7 @@ mac-cleaner
 | Key | Action |
 |-----|--------|
 | `↑`/`↓` or `j`/`k` | Move selection |
-| `Tab` / `Shift+Tab` | Switch category |
+| `Tab` / `Shift+Tab` | Cycle Dashboard and categories |
 | `Space` | Toggle item |
 | `a` | **Select ALL in category** |
 | `A` | Deselect category |

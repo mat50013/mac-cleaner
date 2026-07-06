@@ -94,6 +94,22 @@ impl Category {
     }
 }
 
+/// Main panel: overview chart or a category item list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MainView {
+    Dashboard,
+    Category(Category),
+}
+
+impl MainView {
+    pub fn category(self) -> Option<Category> {
+        match self {
+            MainView::Dashboard => None,
+            MainView::Category(c) => Some(c),
+        }
+    }
+}
+
 /// What the cleaner should do with an item when the user confirms.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemAction {

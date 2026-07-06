@@ -3,7 +3,8 @@
 use crate::clean::{CleanOptions, run_clean};
 use crate::config::{Config, DeleteMode};
 use crate::event::{DiskInfo, Event, EventHandler, WorkerMsg, WorkerSender};
-use crate::model::{Category, SafetyTier, ScanResults, ScanStatus};
+use crate::model::{Category, MainView, SafetyTier, ScanResults, ScanStatus};
+use crate::scan::read_disk_info;
 use crate::privilege::{PrivilegeInfo, open_fda_settings};
 use crate::scan::caches::start_docker_and_wait;
 use crate::scan::{ScanContext, run_all};
@@ -21,7 +22,7 @@ use std::sync::Arc;
 pub struct App {
     pub config: Config,
     pub results: ScanResults,
-    pub current_category: Category,
+    pub view: MainView,
     pub selected_row: usize,
     pub scroll: usize,
     pub scanning: bool,
@@ -31,7 +32,6 @@ pub struct App {
     pub privilege: PrivilegeInfo,
     pub modal: Modal,
     pub status_line: String,
-    pub show_dashboard: bool,
     categories: Vec<Category>,
     finished: HashSet<Category>,
     worker: WorkerSender,
@@ -53,7 +53,7 @@ impl App {
         App {
             config,
             results: ScanResults::new(),
-            current_category: Category::Caches,
+            view: MainView::Dashboard,
             selected_row: 0,
             scroll: 0,
             scanning: false,
@@ -67,7 +67,6 @@ impl App {
                 Modal::None
             },
             status_line: String::new(),
-            show_dashboard: true,
             categories,
             finished: HashSet::new(),
             worker,
@@ -86,7 +85,6 @@ impl App {
         self.scanning = true;
         self.finished.clear();
         self.results = ScanResults::new();
-        self.show_dashboard = false;
         self.status_line = "Starting scan…".into();
 
         for cat in &self.categories {
@@ -169,7 +167,7 @@ impl App {
                 self.finished.insert(category);
                 if self.finished.len() >= self.categories.len() {
                     self.scanning = false;
-                    self.show_dashboard = true;
+                    self.view = MainView::Dashboard;
                     self.status_line = "Scan complete".into();
                     self.worker.send(WorkerMsg::ScanComplete);
                 }
@@ -181,7 +179,7 @@ impl App {
                 self.finished.insert(category);
                 if self.finished.len() >= self.categories.len() {
                     self.scanning = false;
-                    self.show_dashboard = true;
+                    self.view = MainView::Dashboard;
                 }
             }
             WorkerMsg::ScanComplete => {}
@@ -192,6 +190,7 @@ impl App {
                 self.cleaning = false;
                 self.modal = Modal::CleanDone { freed, failures };
                 self.remove_cleaned();
+                self.disk = read_disk_info();
             }
             WorkerMsg::DockerReady(ok) => {
                 if ok {
@@ -268,10 +267,13 @@ impl App {
             KeyCode::Char('i') => self.invert_category(),
             KeyCode::Up | KeyCode::Char('k') => self.move_row(-1),
             KeyCode::Down | KeyCode::Char('j') => self.move_row(1),
-            KeyCode::Tab => self.next_category(1),
-            KeyCode::BackTab => self.next_category(-1),
+            KeyCode::Tab => self.next_view(1),
+            KeyCode::BackTab => self.next_view(-1),
             KeyCode::Enter => {
-                if let Some(items) = self.results.items.get(&self.current_category) {
+                let Some(cat) = self.view.category() else {
+                    return false;
+                };
+                if let Some(items) = self.results.items.get(&cat) {
                     if let Some(item) = items.get(self.selected_row) {
                         if item.path == std::path::Path::new("/docker-start") {
                             self.modal = Modal::DockerStart;
@@ -287,7 +289,10 @@ impl App {
     }
 
     fn toggle_current(&mut self) {
-        if let Some(items) = self.results.items.get_mut(&self.current_category) {
+        let Some(cat) = self.view.category() else {
+            return;
+        };
+        if let Some(items) = self.results.items.get_mut(&cat) {
             if let Some(item) = items.get_mut(self.selected_row) {
                 if item.selectable() {
                     item.selected = !item.selected;
@@ -297,7 +302,10 @@ impl App {
     }
 
     fn select_all_category(&mut self, select: bool) {
-        if let Some(items) = self.results.items.get_mut(&self.current_category) {
+        let Some(cat) = self.view.category() else {
+            return;
+        };
+        if let Some(items) = self.results.items.get_mut(&cat) {
             for item in items.iter_mut() {
                 if item.selectable() {
                     item.selected = select;
@@ -327,7 +335,10 @@ impl App {
     }
 
     fn invert_category(&mut self) {
-        if let Some(items) = self.results.items.get_mut(&self.current_category) {
+        let Some(cat) = self.view.category() else {
+            return;
+        };
+        if let Some(items) = self.results.items.get_mut(&cat) {
             for item in items.iter_mut() {
                 if item.selectable() {
                     item.selected = !item.selected;
@@ -337,7 +348,10 @@ impl App {
     }
 
     fn move_row(&mut self, delta: i32) {
-        let len = self.results.items_for(self.current_category).len();
+        let Some(cat) = self.view.category() else {
+            return;
+        };
+        let len = self.results.items_for(cat).len();
         if len == 0 {
             return;
         }
@@ -354,21 +368,28 @@ impl App {
         }
     }
 
-    fn next_category(&mut self, delta: i32) {
-        let all = &self.categories;
-        let pos = all
-            .iter()
-            .position(|c| *c == self.current_category)
-            .unwrap_or(0) as i32;
-        let next = (pos + delta).rem_euclid(all.len() as i32) as usize;
-        self.current_category = all[next];
-        self.selected_row = 0;
-        self.scroll = 0;
-        self.show_dashboard = false;
+    fn next_view(&mut self, delta: i32) {
+        let n = 1 + self.categories.len();
+        let pos = match self.view {
+            MainView::Dashboard => 0,
+            MainView::Category(c) => 1 + self
+                .categories
+                .iter()
+                .position(|x| *x == c)
+                .unwrap_or(0),
+        } as i32;
+        let next = (pos + delta).rem_euclid(n as i32) as usize;
+        if next == 0 {
+            self.view = MainView::Dashboard;
+        } else {
+            self.view = MainView::Category(self.categories[next - 1]);
+            self.selected_row = 0;
+            self.scroll = 0;
+        }
     }
 
     fn flip_keeper(&mut self) {
-        if self.current_category != Category::Duplicates {
+        if self.view.category() != Some(Category::Duplicates) {
             return;
         }
         let Some(items) = self.results.items.get_mut(&Category::Duplicates) else {
@@ -503,7 +524,7 @@ mod tests {
                 item(3, SafetyTier::Risky),
             ],
         );
-        a.current_category = Category::Caches;
+        a.view = MainView::Category(Category::Caches);
 
         a.select_all_category(true);
         assert_eq!(selected_count(&a, Category::Caches), 3);
@@ -535,7 +556,7 @@ mod tests {
             Category::Caches,
             vec![item(1, SafetyTier::Safe), item(2, SafetyTier::Safe)],
         );
-        a.current_category = Category::Caches;
+        a.view = MainView::Category(Category::Caches);
         a.selected_row = 0;
 
         a.toggle_current();
@@ -560,7 +581,7 @@ mod tests {
                 .map(|i| item(i as u64 * 1000, SafetyTier::Moderate))
                 .collect(),
         );
-        a.current_category = Category::LargeFiles;
+        a.view = MainView::Category(Category::LargeFiles);
 
         for _ in 0..visible.saturating_sub(1) {
             a.move_row(1);
@@ -596,7 +617,7 @@ mod tests {
                 .map(|i| item(i as u64 * 1000, SafetyTier::Moderate))
                 .collect(),
         );
-        a.current_category = Category::LargeFiles;
+        a.view = MainView::Category(Category::LargeFiles);
 
         for _ in 0..count - 1 {
             a.move_row(1);
@@ -613,7 +634,7 @@ mod tests {
         a.results
             .items
             .insert(Category::Caches, vec![sel, item(2, SafetyTier::Safe)]);
-        a.current_category = Category::Caches;
+        a.view = MainView::Category(Category::Caches);
 
         a.invert_category();
         let items = a.results.items_for(Category::Caches);
@@ -633,7 +654,7 @@ mod tests {
         a1.is_keeper = false;
         a1.selected = true;
         a.results.items.insert(Category::Duplicates, vec![a0, a1]);
-        a.current_category = Category::Duplicates;
+        a.view = MainView::Category(Category::Duplicates);
         a.selected_row = 1;
 
         a.flip_keeper();
@@ -650,12 +671,32 @@ mod tests {
         let mut docker = item(0, SafetyTier::Moderate);
         docker.path = PathBuf::from("/docker-start");
         a.results.items.insert(Category::Caches, vec![docker]);
-        a.current_category = Category::Caches;
+        a.view = MainView::Category(Category::Caches);
         a.selected_row = 0;
 
         let quit = a.handle_main_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(!quit);
         assert!(matches!(a.modal, Modal::DockerStart));
+    }
+
+    #[test]
+    fn next_view_cycles_dashboard_and_categories() {
+        let mut a = app();
+        assert!(matches!(a.view, MainView::Dashboard));
+
+        a.next_view(1);
+        assert_eq!(a.view, MainView::Category(Category::Caches));
+
+        a.next_view(-1);
+        assert!(matches!(a.view, MainView::Dashboard));
+
+        for _ in 0..Category::ALL.len() {
+            a.next_view(1);
+        }
+        assert_eq!(a.view, MainView::Category(Category::Trash));
+
+        a.next_view(1);
+        assert!(matches!(a.view, MainView::Dashboard));
     }
 
     #[test]
