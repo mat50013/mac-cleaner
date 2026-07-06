@@ -1,81 +1,92 @@
 # mac-cleaner
 
-Fast, safe, and free macOS storage cleaner with an impressive terminal UI (TUI). Finds hidden caches buried inside `Application Support`, generic `logs` directories, duplicate files, large files, iCloud offload candidates, and your Trash — then lets you review and clean with one key.
+![mac-cleaner dashboard — reclaimable space by category](assets/dashboard.png)
 
-## Features
+[![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/platform-macOS-blue?style=flat-square)](https://www.apple.com/macos/)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](#license)
 
-| Category | What it finds |
-|----------|----------------|
-| **Caches** | Recursive cache-signature detection (`Cache`, `Code Cache`, `GPUCache`, `*ShipIt`, etc.) across `~/Library`, dev tool caches, Docker prune targets |
-| **Logs** | Any `logs`/`log` directory and `*.log` files anywhere under your home (pm2, npm, docker, app logs) |
-| **Duplicates** | Size-bucket → partial hash → blake3 full hash; keeps oldest, flags newer |
-| **iCloud** | Large locally-downloaded iCloud Drive files that can be evicted (`brctl evict`) |
-| **Large Files** | Files ≥ 100 MB in Downloads, Documents, Desktop, Movies |
-| **Trash** | Reports Trash size and lets you empty it |
+Data-driven macOS cleanup, with a fast terminal UI and a simple rule: **review the evidence before deleting anything**.
 
-### Safety
+mac-cleaner finds redundant files by measuring real disk usage, hashing duplicates, grouping reclaimable space by category, and showing exactly what will be cleaned. No mystery buttons. No blind "optimize" switch. Just the data you need to reclaim space with confidence.
 
-- **Trash by default** — everything reversible via Finder → Put Back
-- **Tier coloring** — green (safe), yellow (moderate), red (risky)
-- **Protected paths** — never touches `User`, `Default`, `Profile *`, `node_modules`, `.ssh`, Steam, Photos, etc.
-- **Confirm modal** before any deletion
-- **Sparse-aware sizing** — `Docker.raw` shows real disk usage, not logical 1 TB
+## Why mac-cleaner?
+
+Most cleaners ask you to trust them. mac-cleaner shows its work.
+
+- **See the space first**: dashboard totals update from the scan results and refresh after cleaning.
+- **Clean what is actually redundant**: duplicates are hash-verified, caches/logs are matched by known signatures, and iCloud files are evicted instead of deleted.
+- **Stay in control**: every item is visible, selectable, and color-coded before anything happens.
+- **Recover by default**: normal cleanup moves files to Trash unless you explicitly choose permanent delete.
+- **Built for macOS details**: sparse files, Trash behavior, Full Disk Access, iCloud offload, and protected app data are handled deliberately.
+
+## What It Finds
+
+| Category | What mac-cleaner looks for |
+| --- | --- |
+| **Caches** | Recursive cache signatures such as `Cache`, `Code Cache`, `GPUCache`, `*ShipIt`, developer caches, and Docker prune targets |
+| **Logs** | `logs` / `log` directories and `*.log` files across your home folder |
+| **Duplicates** | Same-size files verified with partial hashing and full `blake3` hashing |
+| **iCloud** | Large local iCloud Drive copies that can be evicted while keeping the file in iCloud |
+| **Large Files** | Big files in common user folders: Downloads, Documents, Desktop, Movies |
+| **Trash** | Trash size and permanent emptying when you choose to clean it |
+
+## Safety Model
+
+mac-cleaner is built to be cautious by default.
+
+- **Review-first TUI**: nothing is cleaned until you confirm it.
+- **Trash by default**: use Finder's Put Back when you want to undo.
+- **Permanent delete is explicit**: press `D`, not `d`.
+- **Duplicate keepers are locked**: the oldest copy is kept unless you choose another keeper.
+- **Protected paths are skipped**: browser profiles, keychains, SSH/GPG data, Photos Library, Steam, and other sensitive folders are avoided.
+- **Real disk size is used**: sparse files are measured by allocated blocks, not misleading logical size.
 
 ## Install
 
+Install from GitHub:
+
 ```bash
-git clone https://github.com/you/mac-cleaner.git
+cargo install --git https://github.com/mat50013/mac-cleaner.git
+```
+
+Or run from source:
+
+```bash
+git clone https://github.com/mat50013/mac-cleaner.git
 cd mac-cleaner
-cargo install --path .
+cargo run --release
 ```
 
-Or run directly:
+## Quick Start
 
-```bash
-cargo run
-```
-
-## Permissions
-
-mac-cleaner requests **administrator privileges** at launch (via `sudo`) so it can scan system-level caches and other users' data. Your password is entered in the terminal; the TUI renders normally after elevation.
-
-To skip auto-elevation:
-
-```bash
-mac-cleaner --no-elevate
-```
-
-**Full Disk Access** (separate from sudo) may be needed for Mail, Safari, and some TCC-protected paths. On first run the app shows a modal with a link to System Settings → Privacy & Security → Full Disk Access.
-
-## Usage
-
-### TUI (default)
+Launch the TUI:
 
 ```bash
 mac-cleaner
 ```
 
-#### Keybindings
+Scan, review the dashboard, open a category, select what you want, then clean.
 
 | Key | Action |
-|-----|--------|
-| `↑`/`↓` or `j`/`k` | Move selection |
+| --- | --- |
 | `Tab` / `Shift+Tab` | Cycle Dashboard and categories |
-| `Space` | Toggle item |
-| `a` | **Select ALL in category** |
-| `A` | Deselect category |
-| `s` | Select all Safe items (all categories) |
+| `↑` / `↓` or `j` / `k` | Move selection |
+| `Space` | Toggle selected item |
+| `a` / `A` | Select all / deselect category |
+| `s` | Select all safe items |
 | `n` | Clear all selections |
 | `i` | Invert category selection |
-| `Enter` | Flip duplicate keeper |
-| `d` | Clean selected |
+| `Enter` | Duplicates: choose which copy to keep |
+| `d` | Move selected items to Trash |
+| `D` | Delete selected items forever |
 | `r` | Rescan |
 | `?` | Help |
 | `q` / `Esc` | Quit |
 
-On-screen hints in the footer and detail panel always show `press a to select all`.
+## CLI
 
-### CLI
+Use mac-cleaner headlessly when you want scriptable output or cleanup.
 
 ```bash
 # Scan and print results
@@ -85,21 +96,39 @@ mac-cleaner scan
 mac-cleaner scan --json
 
 # Scan specific categories
-mac-cleaner scan --categories caches,logs
+mac-cleaner scan --categories caches,logs,duplicates
 
-# Headless clean (safe items pre-selected)
+# Clean safe items without opening the TUI
 mac-cleaner clean --categories caches --yes
 
-# Dry run
+# Preview actions without deleting anything
 mac-cleaner --dry-run
 
-# Write default config
+# Write the default config
 mac-cleaner init-config
 ```
 
+## Permissions
+
+mac-cleaner requests administrator privileges by default so it can scan system-level caches and other users' data. Your password is entered in the terminal through `sudo`.
+
+Skip elevation when you only want user-folder cleanup:
+
+```bash
+mac-cleaner --no-elevate
+```
+
+Full Disk Access is separate from `sudo`. macOS may require it for Mail, Safari, TCC-protected locations, and some application data. If access is limited, mac-cleaner opens the correct System Settings pane from the TUI.
+
 ## Configuration
 
-Optional TOML at `~/.config/mac-cleaner/config.toml`:
+Create a default config:
+
+```bash
+mac-cleaner init-config
+```
+
+Then edit `~/.config/mac-cleaner/config.toml`.
 
 ```toml
 [cache]
@@ -118,15 +147,17 @@ auto_elevate = true
 mode = "trash"  # or "permanent"
 ```
 
-Run `mac-cleaner init-config` to generate the full default file.
+## How It Works
 
-## How it works
+1. **Parallel scanning** walks configured roots with the `ignore` crate and `rayon`.
+2. **Real-size accounting** uses allocated blocks, so sparse files are not overcounted.
+3. **Duplicate detection** buckets by size, checks partial hashes, then verifies full-file `blake3` hashes.
+4. **Risk scoring** combines size, safety tier, and staleness to rank high-value cleanup first.
+5. **Background workers** keep scanning and cleaning off the UI thread, so the TUI stays responsive.
 
-1. **Parallel scan** — `ignore` crate multi-threaded walk with `rayon` for hashing
-2. **Cache signatures** — directory names like `Cache`, `Code Cache`, `GPUCache`, `*ShipIt` anywhere under `~/Library`
-3. **Real disk sizing** — `st_blocks × 512`, not `metadata().len()` (critical for sparse files)
-4. **Scoring** — `size × regen_factor × staleness` ranks biggest safe wins first
-5. **Background workers** — scan/clean on threads; UI updates via channels at ~30 fps
+## Status
+
+mac-cleaner is already useful for local cleanup, but it is intentionally conservative. Review the scan results, use Trash mode first, and run `--dry-run` when testing new config roots.
 
 ## License
 
