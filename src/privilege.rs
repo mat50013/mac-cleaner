@@ -1,11 +1,4 @@
-//! Administrator elevation and Full Disk Access handling.
-//!
-//! The app wants root so it can measure/clean system-level and other-user
-//! caches. On launch (before the alt screen) we check `geteuid`; if we are not
-//! root and elevation is allowed, we re-exec ourselves through `sudo`,
-//! inheriting the current TTY so the TUI still renders after the password
-//! prompt. Full Disk Access (TCC) is a separate grant that `sudo` cannot
-//! provide, so we probe for it and surface a guided modal when missing.
+//! Administrator elevation and Full Disk Access checks.
 
 use std::io::IsTerminal;
 use std::path::Path;
@@ -18,13 +11,12 @@ pub const FDA_SETTINGS_URL: &str =
 #[derive(Debug, Clone, Copy)]
 pub struct PrivilegeInfo {
     pub is_root: bool,
-    /// Running without root: some system/other-user items are hidden.
+    /// True when system and other-user paths may be unavailable.
     pub limited: bool,
     pub full_disk_access: bool,
 }
 
 pub fn is_root() -> bool {
-    // Safe: geteuid has no preconditions and cannot fail.
     unsafe { libc::geteuid() == 0 }
 }
 
@@ -39,9 +31,7 @@ fn is_valid_login_user(name: &str) -> bool {
     !name.is_empty() && name != "root"
 }
 
-/// If we are not root and elevation is permitted, re-exec through `sudo` and
-/// exit this process with the child's status. Returns normally only when we
-/// stay unprivileged (already root, disabled, or no TTY to prompt on).
+/// Re-exec through `sudo` when elevation is enabled and the terminal can prompt.
 pub fn maybe_elevate(auto_elevate: bool) -> PrivilegeInfo {
     let root = is_root();
     if root {
@@ -57,11 +47,7 @@ pub fn maybe_elevate(auto_elevate: bool) -> PrivilegeInfo {
         if let Ok(exe) = std::env::current_exe() {
             let args: Vec<String> = std::env::args().skip(1).collect();
             eprintln!("mac-cleaner: requesting administrator privileges via sudo...");
-            let status = Command::new("sudo")
-                .arg("--")
-                .arg(exe)
-                .args(&args)
-                .status();
+            let status = Command::new("sudo").arg("--").arg(exe).args(&args).status();
             match status {
                 Ok(s) => std::process::exit(s.code().unwrap_or(0)),
                 Err(e) => {
@@ -78,8 +64,7 @@ pub fn maybe_elevate(auto_elevate: bool) -> PrivilegeInfo {
     }
 }
 
-/// Probe whether we can read TCC-protected locations. Best-effort: a clear
-/// permission error means "no FDA"; anything else is treated as fine.
+/// Probe access to common TCC-protected locations.
 pub fn has_full_disk_access() -> bool {
     let home = crate::fs_util::home_dir();
     let candidates = [
@@ -91,7 +76,7 @@ pub fn has_full_disk_access() -> bool {
         match probe_read(&path) {
             Some(true) => return true,
             Some(false) => return false,
-            None => continue, // missing / inconclusive
+            None => continue,
         }
     }
     true

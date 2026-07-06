@@ -1,7 +1,6 @@
-//! mac-cleaner integration tests: exercise the real scanners and the cleaning
-//! engine against throwaway temp directories.
+//! Integration tests for scanners and cleaning.
 
-use mac_cleaner::clean::{run_clean, CleanOptions};
+use mac_cleaner::clean::{CleanOptions, run_clean};
 use mac_cleaner::config::{Config, DeleteMode};
 use mac_cleaner::event::{Event, WorkerMsg, WorkerSender};
 use mac_cleaner::fs_util::{dir_real_size, expand_tilde, human_size};
@@ -14,7 +13,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::tempdir;
-
 
 fn write_file(path: &Path, bytes: &[u8]) {
     if let Some(parent) = path.parent() {
@@ -38,14 +36,13 @@ fn path_str(p: &Path) -> String {
     p.to_string_lossy().to_string()
 }
 
-/// Run `run_clean` and block until its terminal `CleanDone` message.
 fn clean_and_wait(items: Vec<ScanItem>, opts: CleanOptions) -> (u64, Vec<String>) {
     let (worker, rx) = WorkerSender::channel();
     run_clean(items, opts, worker);
     loop {
         match rx.recv_timeout(Duration::from_secs(10)) {
             Ok(Event::Worker(WorkerMsg::CleanDone { freed, failures })) => {
-                return (freed, failures)
+                return (freed, failures);
             }
             Ok(_) => continue,
             Err(_) => panic!("timed out waiting for CleanDone"),
@@ -102,13 +99,9 @@ fn dir_real_size_recurses_and_dedups() {
 fn walk_parallel_prunes_excluded_and_protected() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    // A real cache dir we DO want to find.
     write_file(&root.join("Cache/data.bin"), &[0u8; 2048]);
-    // A cache dir hidden inside a dependency dir we must skip entirely.
     write_file(&root.join("node_modules/Cache/data.bin"), &[0u8; 2048]);
-    // A cache dir under a protected profile dir we must skip entirely.
     write_file(&root.join("Default/Cache/data.bin"), &[0u8; 2048]);
-    // A plain file that should never trigger on_dir.
     write_file(&root.join("normal/file.txt"), &[0u8; 16]);
 
     let m = Config::default().matchers().unwrap();
@@ -132,7 +125,6 @@ fn walk_parallel_prunes_excluded_and_protected() {
     assert!(found[0].ends_with("Cache"));
 }
 
-
 #[test]
 fn duplicates_scan_groups_identical_and_keeps_one() {
     let dir = tempdir().unwrap();
@@ -140,12 +132,10 @@ fn duplicates_scan_groups_identical_and_keeps_one() {
 
     let shared = vec![7u8; 8192];
     write_file(&root.join("a.bin"), &shared);
-    write_file(&root.join("b.bin"), &shared); // byte-identical to a.bin
-    // Same size, different content: must be filtered by the hash gate.
+    write_file(&root.join("b.bin"), &shared);
     let mut other = vec![7u8; 8192];
     other[0] = 42;
     write_file(&root.join("c.bin"), &other);
-    // Below the min-size threshold: ignored entirely.
     write_file(&root.join("tiny.bin"), &[7u8; 16]);
 
     let mut cfg = Config::default();
@@ -159,10 +149,8 @@ fn duplicates_scan_groups_identical_and_keeps_one() {
     let selected: Vec<_> = items.iter().filter(|i| i.selected).collect();
     assert_eq!(selected.len(), 1);
     assert!(!selected[0].is_keeper);
-    // Both members share a group id.
     assert_eq!(items[0].group_id, items[1].group_id);
     assert!(items[0].group_id.is_some());
-    // The unique file must not appear.
     assert!(items.iter().all(|i| !i.path.ends_with("c.bin")));
 }
 
@@ -205,7 +193,6 @@ fn logs_scan_finds_dirs_and_files() {
         "logs dir missing: {items:?}"
     );
 }
-
 
 #[test]
 fn clean_dry_run_deletes_nothing_but_reports_freed() {
@@ -251,7 +238,6 @@ fn clean_permanent_removes_file() {
 
 #[test]
 fn clean_missing_path_is_a_noop_not_an_error() {
-    // Mirrors synthetic items like the "Docker not running" prompt.
     let item = ScanItem::new(
         PathBuf::from("/definitely/not/here/xyz.bin"),
         "ghost",
@@ -278,7 +264,13 @@ fn clean_truncate_empties_file_in_place() {
     let dir = tempdir().unwrap();
     let p = dir.path().join("active.log");
     write_file(&p, &[0u8; 10_000]);
-    let mut item = ScanItem::new(p.clone(), "active.log", 10_000, SafetyTier::Safe, Category::Logs);
+    let mut item = ScanItem::new(
+        p.clone(),
+        "active.log",
+        10_000,
+        SafetyTier::Safe,
+        Category::Logs,
+    );
     item.action = ItemAction::Truncate;
 
     let (_freed, failures) = clean_and_wait(
@@ -295,15 +287,20 @@ fn clean_truncate_empties_file_in_place() {
     assert_eq!(fs::metadata(&p).unwrap().len(), 0, "file should be emptied");
 }
 
-/// Moves a file to the real macOS Trash, so it is `#[ignore]`d by default to
-/// avoid cluttering the developer's Trash. Run with `cargo test -- --ignored`.
+/// Moves a file to the real macOS Trash. Run with `cargo test -- --ignored`.
 #[test]
 #[ignore]
 fn clean_trash_roundtrip() {
     let dir = tempdir().unwrap();
     let p = dir.path().join("to_trash.bin");
     write_file(&p, &[0u8; 4096]);
-    let item = ScanItem::new(p.clone(), "to_trash", 4096, SafetyTier::Safe, Category::Caches);
+    let item = ScanItem::new(
+        p.clone(),
+        "to_trash",
+        4096,
+        SafetyTier::Safe,
+        Category::Caches,
+    );
 
     let (freed, failures) = clean_and_wait(
         vec![item],

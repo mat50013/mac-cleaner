@@ -3,19 +3,19 @@
 use crate::fs_util::human_size;
 use crate::model::{Category, ScanResults};
 use crate::ui::theme;
+use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
-use ratatui::Frame;
 use std::f64::consts::TAU;
 
 struct Slice {
     category: Category,
     bytes: u64,
     color: Color,
-    start: f64, // radians, 0 = 12 o'clock, clockwise
+    start: f64,
     end: f64,
 }
 
@@ -73,8 +73,7 @@ fn build_slices(results: &ScanResults, total: u64) -> Vec<Slice> {
     slices
 }
 
-/// Donut chart drawn cell-by-cell. Y is stretched 2× so the ring looks round
-/// in a typical terminal aspect ratio.
+/// Draw the donut chart cell by cell.
 fn draw_pie(buf: &mut Buffer, area: Rect, slices: &[Slice], total: u64) {
     if area.width < 3 || area.height < 3 {
         return;
@@ -92,28 +91,25 @@ fn draw_pie(buf: &mut Buffer, area: Rect, slices: &[Slice], total: u64) {
     for y in area.y..area.y + area.height {
         for x in area.x..area.x + area.width {
             let dx = x as f64 - cx;
-            let dy = (y as f64 - cy) * 2.0; // compensate terminal cell aspect ratio
+            let dy = (y as f64 - cy) * 2.0;
             let dist2 = dx * dx + dy * dy;
             if dist2 < inner_r2 || dist2 > outer_r2 {
                 continue;
             }
 
-            let mut angle = dx.atan2(-dy); // 0 at 12 o'clock, clockwise
+            let mut angle = dx.atan2(-dy);
             if angle < 0.0 {
                 angle += TAU;
             }
 
             if let Some(slice) = slices.iter().find(|s| angle >= s.start && angle < s.end) {
-                buf[(x, y)].set_symbol("█").set_style(
-                    Style::default()
-                        .fg(slice.color)
-                        .bg(theme::surface()),
-                );
+                buf[(x, y)]
+                    .set_symbol("█")
+                    .set_style(Style::default().fg(slice.color).bg(theme::surface()));
             }
         }
     }
 
-    // Total in the donut hole.
     let label_w = human_size(total).len() as u16 + 2;
     let label_h = 3u16;
     let lx = cx as u16 - label_w / 2;
@@ -126,10 +122,7 @@ fn draw_pie(buf: &mut Buffer, area: Rect, slices: &[Slice], total: u64) {
     };
     let center = Paragraph::new(vec![
         Line::from(Span::styled("Total", theme::dim())),
-        Line::from(Span::styled(
-            human_size(total),
-            theme::title_style(),
-        )),
+        Line::from(Span::styled(human_size(total), theme::title_style())),
     ])
     .centered();
     center.render(label_area, buf);
@@ -137,10 +130,7 @@ fn draw_pie(buf: &mut Buffer, area: Rect, slices: &[Slice], total: u64) {
 
 fn draw_legend(f: &mut Frame, area: Rect, slices: &[Slice], total: u64) {
     let mut lines: Vec<Line> = Vec::with_capacity(slices.len() + 1);
-    lines.push(Line::from(Span::styled(
-        "Breakdown",
-        theme::title_style(),
-    )));
+    lines.push(Line::from(Span::styled("Breakdown", theme::title_style())));
     lines.push(Line::from(""));
 
     for slice in slices {

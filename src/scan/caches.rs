@@ -1,20 +1,19 @@
-//! Cache scanner: recursive signature detection across ~/Library and dev caches.
+//! Cache scanner.
 
 use crate::fs_util::home_dir;
 use crate::model::{Category, DockerPrune, ItemAction, SafetyTier, ScanItem};
 use crate::scan::{
-    item_from_dir, label_for, path_bytes, run_cmd, walk_parallel, which, ScanContext,
+    ScanContext, item_from_dir, label_for, path_bytes, run_cmd, walk_parallel, which,
 };
 use anyhow::Result;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
     let items_mtx = Mutex::new(Vec::<ScanItem>::new());
     let seen = Mutex::new(HashSet::<PathBuf>::new());
-    // Running totals for progress, so we never re-sum the whole vec (O(n^2)).
     let total_bytes = AtomicU64::new(0);
     let count = AtomicUsize::new(0);
 
@@ -27,12 +26,10 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
             matchers,
             |path, name| {
                 if matchers.is_cache_signature(name) {
-                    // Reserve the path under the lock, then release it BEFORE the
-                    // expensive directory-size walk so other threads keep moving.
                     {
                         let mut guard = seen.lock().unwrap();
                         if !guard.insert(path.to_path_buf()) {
-                            return true; // already claimed elsewhere
+                            return true;
                         }
                     }
                     let bytes = path_bytes(path);
@@ -69,7 +66,7 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
                             bytes: running,
                         });
                     }
-                    return true; // prune subtree
+                    return true;
                 }
                 false
             },
@@ -79,7 +76,6 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
 
     let mut items = items_mtx.into_inner().unwrap();
 
-    // Top-level ~/Library/Caches/* as individual items (one per app).
     let caches_root = home_dir().join("Library/Caches");
     if caches_root.is_dir() {
         if let Ok(entries) = std::fs::read_dir(&caches_root) {
@@ -106,8 +102,7 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
                     SafetyTier::Safe
                 };
                 items.push(
-                    ScanItem::new(path, name, bytes, tier, Category::Caches)
-                        .with_note("app cache"),
+                    ScanItem::new(path, name, bytes, tier, Category::Caches).with_note("app cache"),
                 );
             }
         }
@@ -124,9 +119,8 @@ fn scan_docker() -> Result<Vec<ScanItem>> {
         return Ok(items);
     }
 
-    let docker_raw = home_dir().join(
-        "Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw",
-    );
+    let docker_raw =
+        home_dir().join("Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw");
     if docker_raw.exists() {
         let bytes = path_bytes(&docker_raw);
         items.push(
@@ -142,7 +136,10 @@ fn scan_docker() -> Result<Vec<ScanItem>> {
     }
 
     if run_cmd("docker", &["info"]).is_some() {
-        if let Some(out) = run_cmd("docker", &["system", "df", "--format", "{{.Type}}\t{{.Reclaimable}}"]) {
+        if let Some(out) = run_cmd(
+            "docker",
+            &["system", "df", "--format", "{{.Type}}\t{{.Reclaimable}}"],
+        ) {
             for line in out.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
                 if parts.len() < 2 {
@@ -157,7 +154,10 @@ fn scan_docker() -> Result<Vec<ScanItem>> {
                         "Docker build cache",
                         ItemAction::DockerPrune(DockerPrune::BuildCache),
                     ),
-                    "Images" => ("Docker unused images", ItemAction::DockerPrune(DockerPrune::Images)),
+                    "Images" => (
+                        "Docker unused images",
+                        ItemAction::DockerPrune(DockerPrune::Images),
+                    ),
                     "Containers" => (
                         "Docker stopped containers",
                         ItemAction::DockerPrune(DockerPrune::Containers),
@@ -187,8 +187,6 @@ fn scan_docker() -> Result<Vec<ScanItem>> {
                 PathBuf::from("/docker-start"),
                 "Docker not running — press Enter to start & rescan",
                 0,
-                // Moderate so it is not auto-selected for deletion; it is an
-                // action prompt, not a real reclaimable path.
                 SafetyTier::Moderate,
                 Category::Caches,
             )

@@ -2,9 +2,9 @@
 
 use crate::fs_util::human_size;
 use crate::ui::theme;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 
 #[derive(Debug, Clone)]
 pub enum Modal {
@@ -17,8 +17,15 @@ pub enum Modal {
         empty_trash: bool,
         evict_only: bool,
     },
-    CleanProgress { done: usize, total: usize, freed: u64 },
-    CleanDone { freed: u64, failures: Vec<String> },
+    CleanProgress {
+        done: usize,
+        total: usize,
+        freed: u64,
+    },
+    CleanDone {
+        freed: u64,
+        failures: Vec<String>,
+    },
     Fda,
     DockerStart,
 }
@@ -104,14 +111,7 @@ fn draw_centered(f: &mut Frame, area: Rect, title: &str, body: &str) {
     draw_centered_sized(f, area, title, body, 60, 40);
 }
 
-fn draw_centered_sized(
-    f: &mut Frame,
-    area: Rect,
-    title: &str,
-    body: &str,
-    pct_x: u16,
-    pct_y: u16,
-) {
+fn draw_centered_sized(f: &mut Frame, area: Rect, title: &str, body: &str, pct_x: u16, pct_y: u16) {
     let popup = centered_rect(pct_x, pct_y, area);
     f.render_widget(Clear, popup);
     let block = theme::block(title);
@@ -163,15 +163,7 @@ Tips\n\
     draw_popup_sized(f, area, " Help ", text, 72, 78);
 }
 
-/// Dim backdrop + drop shadow + elevated panel (help modal).
-fn draw_popup_sized(
-    f: &mut Frame,
-    area: Rect,
-    title: &str,
-    body: &str,
-    pct_x: u16,
-    pct_y: u16,
-) {
+fn draw_popup_sized(f: &mut Frame, area: Rect, title: &str, body: &str, pct_x: u16, pct_y: u16) {
     f.render_widget(Block::default().style(theme::modal_backdrop()), area);
 
     let popup = centered_rect(pct_x, pct_y, area);

@@ -1,8 +1,8 @@
-//! Duplicate-file scanner: size-bucket, partial hash, full blake3, keep oldest.
+//! Duplicate-file scanner.
 
 use crate::fs_util::{birthtime, inode_id, real_size};
 use crate::model::{Category, SafetyTier, ScanItem};
-use crate::scan::{walk_parallel, ScanContext};
+use crate::scan::{ScanContext, walk_parallel};
 use anyhow::Result;
 use blake3::Hasher;
 use rayon::prelude::*;
@@ -67,8 +67,7 @@ struct FileEntry {
     birth: std::time::SystemTime,
 }
 
-/// Walk every configured duplicate root in parallel and collect candidate files
-/// (>= min size, hard-link deduplicated). No hashing happens here.
+/// Collect candidate files without hashing.
 fn collect_files(ctx: &ScanContext) -> Vec<FileEntry> {
     let min = ctx.config.duplicates.min_bytes;
     let files_mtx = Mutex::new(Vec::<FileEntry>::new());
@@ -91,7 +90,7 @@ fn collect_files(ctx: &ScanContext) -> Vec<FileEntry> {
                 if bytes < min {
                     return;
                 }
-                // Count a hard-linked inode only once — the bytes are shared.
+                // Hard links share storage, so only one path per inode is kept.
                 if md.nlink() > 1 && !inodes_mtx.lock().unwrap().insert(inode_id(&md)) {
                     return;
                 }
@@ -107,15 +106,8 @@ fn collect_files(ctx: &ScanContext) -> Vec<FileEntry> {
     files_mtx.into_inner().unwrap()
 }
 
-/// Three-stage duplicate detection over `files`, returning groups (by index)
-/// of two-or-more byte-identical files:
-///   1. bucket by exact size (free),
-///   2. partial head+tail hash only for size collisions,
-///   3. full streaming blake3 only for partial-hash collisions.
-/// Stages 2 and 3 run in parallel and skip files that can't have a twin, so we
-/// never read a file that is unique by size.
+/// Return groups of byte-identical files by index.
 fn group_duplicates(files: &[FileEntry]) -> Vec<Vec<usize>> {
-    // Stage 1: exact size buckets.
     let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
     for (i, f) in files.iter().enumerate() {
         by_size.entry(f.bytes).or_default().push(i);
@@ -126,14 +118,16 @@ fn group_duplicates(files: &[FileEntry]) -> Vec<Vec<usize>> {
         .flatten()
         .collect();
 
-    // Stage 2: partial hash, in parallel, only for size collisions.
     let partials: Vec<(usize, [u8; 32])> = size_candidates
         .par_iter()
         .filter_map(|&i| partial_hash(&files[i].path, files[i].bytes).map(|h| (i, h)))
         .collect();
     let mut partial_groups: HashMap<([u8; 32], u64), Vec<usize>> = HashMap::new();
     for (i, h) in partials {
-        partial_groups.entry((h, files[i].bytes)).or_default().push(i);
+        partial_groups
+            .entry((h, files[i].bytes))
+            .or_default()
+            .push(i);
     }
     let full_candidates: Vec<usize> = partial_groups
         .into_values()
@@ -141,7 +135,6 @@ fn group_duplicates(files: &[FileEntry]) -> Vec<Vec<usize>> {
         .flatten()
         .collect();
 
-    // Stage 3: full blake3, in parallel, only for partial-hash collisions.
     let hashes: Vec<(usize, [u8; 32])> = full_candidates
         .par_iter()
         .filter_map(|&i| full_hash(&files[i].path).map(|h| (i, h)))
@@ -154,8 +147,7 @@ fn group_duplicates(files: &[FileEntry]) -> Vec<Vec<usize>> {
     groups.into_values().filter(|g| g.len() > 1).collect()
 }
 
-/// Hash the first and last [`PARTIAL`] bytes as a cheap pre-filter. Returns
-/// `None` if the file can't be opened (it is then treated as non-duplicate).
+/// Hash the first and last [`PARTIAL`] bytes as a pre-filter.
 fn partial_hash(path: &Path, size: u64) -> Option<[u8; 32]> {
     let mut f = File::open(path).ok()?;
     let mut h = Hasher::new();
@@ -172,8 +164,7 @@ fn partial_hash(path: &Path, size: u64) -> Option<[u8; 32]> {
     Some(*h.finalize().as_bytes())
 }
 
-/// Hash the full file contents by streaming in fixed-size chunks so we never
-/// hold an entire (potentially multi-GB) file in memory at once.
+/// Hash the full file contents in fixed-size chunks.
 fn full_hash(path: &Path) -> Option<[u8; 32]> {
     const CHUNK: usize = 128 * 1024;
     let mut file = File::open(path).ok()?;

@@ -11,11 +11,11 @@ pub mod theme;
 pub mod widgets;
 
 use crate::app::App;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
-use terminal::{is_large_enough, MIN_HEIGHT, MIN_WIDTH, PREFERRED_HEIGHT, PREFERRED_WIDTH};
+use terminal::{MIN_HEIGHT, MIN_WIDTH, PREFERRED_HEIGHT, PREFERRED_WIDTH, is_large_enough};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();

@@ -17,12 +17,12 @@ use crate::model::Category;
 use crate::privilege::maybe_elevate;
 use anyhow::Result;
 use clap::Parser;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
 use crossterm::ExecutableCommand;
-use ratatui::backend::CrosstermBackend;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use std::io::stdout;
 use std::time::Duration;
 
@@ -54,7 +54,6 @@ pub fn run() -> Result<()> {
 
 fn run_tui(config: Config, privilege: privilege::PrivilegeInfo, dry_run: bool) -> Result<()> {
     install_panic_hook();
-    // Pick RGB vs 256-color palette before any widget draws (Terminal.app needs indexed).
     crate::ui::theme::init();
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
@@ -63,9 +62,6 @@ fn run_tui(config: Config, privilege: privilege::PrivilegeInfo, dry_run: bool) -
     let mut terminal = Terminal::new(backend)?;
     crate::ui::terminal::prepare(&mut terminal)?;
 
-    // A single EventHandler owns the one channel that carries input, ticks, and
-    // worker messages. The same handler's sender is what scanners push results
-    // to, so the UI loop and the background scanners talk over one channel.
     let handler = EventHandler::new(Duration::from_millis(33));
     let worker = handler.sender();
     let categories: Vec<Category> = Category::ALL.to_vec();
@@ -93,9 +89,9 @@ fn install_panic_hook() {
 }
 
 fn run_headless_scan(config: &Config, cats: Option<&str>, json: bool) -> Result<()> {
-    use crossbeam_channel::unbounded;
     use crate::event::WorkerMsg;
-    use crate::scan::{run_all, ScanContext};
+    use crate::scan::{ScanContext, run_all};
+    use crossbeam_channel::unbounded;
     use std::sync::Arc;
 
     let categories: Vec<Category> = cats
@@ -151,17 +147,12 @@ fn run_headless_scan(config: &Config, cats: Option<&str>, json: bool) -> Result<
     Ok(())
 }
 
-fn run_headless_clean(
-    config: &Config,
-    cats: &str,
-    permanent: bool,
-    dry_run: bool,
-) -> Result<()> {
-    use crossbeam_channel::unbounded;
-    use crate::clean::{run_clean, CleanOptions};
+fn run_headless_clean(config: &Config, cats: &str, permanent: bool, dry_run: bool) -> Result<()> {
+    use crate::clean::{CleanOptions, run_clean};
     use crate::config::DeleteMode;
     use crate::event::WorkerMsg;
-    use crate::scan::{run_all, ScanContext};
+    use crate::scan::{ScanContext, run_all};
+    use crossbeam_channel::unbounded;
     use std::sync::Arc;
 
     let categories: Vec<Category> = Cli::parse_categories(cats);

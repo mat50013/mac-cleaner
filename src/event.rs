@@ -1,6 +1,4 @@
-//! Event plumbing. A single [`crossbeam_channel`] carries three producers:
-//! terminal input, a periodic tick, and background worker messages. The UI
-//! thread only ever blocks on one receiver.
+//! Event plumbing for input, ticks, and worker messages.
 
 use crate::model::{Category, ScanItem};
 use crossbeam_channel::{Receiver, Sender};
@@ -24,7 +22,6 @@ pub enum WorkerMsg {
         category: Category,
         reason: String,
     },
-    /// All categories finished.
     ScanComplete,
     CleanProgress {
         done: usize,
@@ -35,7 +32,6 @@ pub enum WorkerMsg {
         freed: u64,
         failures: Vec<String>,
     },
-    /// Docker daemon came up (or failed to) after a start request.
     DockerReady(bool),
     Disk(DiskInfo),
 }
@@ -76,7 +72,7 @@ pub struct EventHandler {
 }
 
 impl EventHandler {
-    /// Spawn the input+tick thread. `tick` is the redraw cadence (~30fps).
+    /// Spawn the input and tick producer.
     pub fn new(tick: Duration) -> EventHandler {
         let (tx, rx) = crossbeam_channel::unbounded();
         let input_tx = tx.clone();
@@ -86,7 +82,6 @@ impl EventHandler {
                 let timeout = tick
                     .checked_sub(last_tick.elapsed())
                     .unwrap_or(Duration::ZERO);
-                // Poll for input up to the remaining tick budget.
                 if crossterm::event::poll(timeout).unwrap_or(false) {
                     match crossterm::event::read() {
                         Ok(ev) => {
@@ -126,8 +121,7 @@ impl EventHandler {
     }
 }
 
-/// Thin wrapper so worker code sends [`WorkerMsg`] without knowing about the
-/// [`Event`] envelope.
+/// Sender used by scanner and cleaner workers.
 #[derive(Clone)]
 pub struct WorkerSender {
     tx: Sender<Event>,
@@ -138,15 +132,13 @@ impl WorkerSender {
         WorkerSender { tx }
     }
 
-    /// A sender whose messages are discarded. Useful for headless scans and
-    /// tests that only care about the returned results, not progress events.
+    /// A sender whose messages are discarded.
     pub fn null() -> WorkerSender {
         let (tx, _rx) = crossbeam_channel::unbounded();
         WorkerSender { tx }
     }
 
-    /// A sender paired with a live receiver, so callers (e.g. tests) can observe
-    /// exactly the [`WorkerMsg`]s that were emitted.
+    /// A sender paired with a live receiver.
     pub fn channel() -> (WorkerSender, Receiver<Event>) {
         let (tx, rx) = crossbeam_channel::unbounded();
         (WorkerSender { tx }, rx)

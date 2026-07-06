@@ -3,11 +3,11 @@
 use crate::event::DiskInfo;
 use crate::fs_util::human_size;
 use crate::ui::theme;
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{LineGauge, Paragraph};
-use ratatui::Frame;
 
 const LEFT_W: u16 = 22;
 const MIN_GAUGE_W: u16 = 10;
@@ -37,7 +37,6 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
     );
     f.render_widget(block, chunks[0]);
 
-    // Hints live on the same row as the disk gauge, inside the Disk block.
     let disk_block = theme::block(" Disk ");
     let disk_outer = chunks[1];
     let disk_inner = disk_block.inner(disk_outer);

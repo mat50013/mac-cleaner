@@ -10,7 +10,7 @@ pub mod trash_cat;
 use crate::config::{Config, Matchers};
 use crate::event::{DiskInfo, WorkerMsg, WorkerSender};
 use crate::fs_util::{dir_real_size, home_dir};
-use crate::model::{Category, ScanItem, SafetyTier};
+use crate::model::{Category, SafetyTier, ScanItem};
 use ignore::WalkBuilder;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -74,23 +74,22 @@ fn scan_category(cat: Category, ctx: ScanContext) {
         Ok(items) => {
             let bytes: u64 = items.iter().map(|i| i.real_bytes).sum();
             ctx.send_progress(cat, items.len(), bytes);
-            ctx.tx.send(WorkerMsg::ScanDone { category: cat, items });
+            ctx.tx.send(WorkerMsg::ScanDone {
+                category: cat,
+                items,
+            });
         }
         Err(e) => {
-            ctx.tx
-                .send(WorkerMsg::ScanSkipped {
-                    category: cat,
-                    reason: e.to_string(),
-                });
+            ctx.tx.send(WorkerMsg::ScanSkipped {
+                category: cat,
+                reason: e.to_string(),
+            });
         }
     }
 }
 
 pub fn read_disk_info() -> DiskInfo {
-    let output = Command::new("df")
-        .args(["-k", "/"])
-        .output()
-        .ok();
+    let output = Command::new("df").args(["-k", "/"]).output().ok();
     if let Some(out) = output {
         if let Ok(text) = String::from_utf8(out.stdout) {
             for line in text.lines().skip(1) {
@@ -112,11 +111,7 @@ pub fn path_bytes(path: &Path) -> u64 {
     dir_real_size(path, &mut seen)
 }
 
-/// Build a human label from the path.
-///
-/// - **Files** → relative path from home (e.g. `Downloads/installer.dmg`).
-/// - **Directories** with a category suffix → `path/to/dir — cache`.
-/// - **Suffix equals basename** (trash/log files) → relative path only.
+/// Build a display label from a path.
 pub fn label_for(path: &Path, suffix: &str) -> String {
     let home = home_dir();
     let rel = path
@@ -176,8 +171,7 @@ mod tests {
     }
 }
 
-/// Parallel walk of `root`, calling `on_dir` for every directory and `on_file` for files.
-/// Returns early from a branch when `on_dir` returns true (prune subtree).
+/// Parallel walk of `root`. Returning `true` from `on_dir` prunes that subtree.
 pub fn walk_parallel(
     root: &Path,
     matchers: &Matchers,

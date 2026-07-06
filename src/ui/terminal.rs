@@ -1,18 +1,18 @@
-//! Terminal setup: preferred size, minimum dimensions, cursor visibility.
+//! Terminal setup and teardown.
 
+use crossterm::ExecutableCommand;
 use crossterm::cursor::{Hide, Show};
 use crossterm::terminal::{Clear, ClearType, SetSize};
-use crossterm::ExecutableCommand;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
-use ratatui::Terminal;
-use std::io::{self, stdout, Stdout};
+use std::io::{self, Stdout, stdout};
 
-/// Minimum columns×rows before the UI refuses to render (shows a resize hint).
+/// Minimum columns and rows required by the TUI.
 pub const MIN_WIDTH: u16 = 160;
 pub const MIN_HEIGHT: u16 = 50;
 
-/// Requested window size on startup (honoured by iTerm2/WezTerm; often ignored by Terminal.app).
+/// Requested window size on startup.
 pub const PREFERRED_WIDTH: u16 = 160;
 pub const PREFERRED_HEIGHT: u16 = 50;
 
@@ -20,10 +20,9 @@ pub fn is_large_enough(width: u16, height: u16) -> bool {
     width >= MIN_WIDTH && height >= MIN_HEIGHT
 }
 
-/// Enter the dedicated TUI viewport: request size, clear, hide cursor.
+/// Enter the TUI viewport.
 pub fn prepare(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> {
     let mut out = stdout();
-    // Best-effort — Terminal.app may ignore this.
     let _ = out.execute(SetSize(PREFERRED_WIDTH, PREFERRED_HEIGHT));
     out.execute(Clear(ClearType::All))?;
     out.execute(Hide)?;

@@ -1,19 +1,19 @@
 //! Application state machine: input, scanning, selection, cleaning.
 
-use crate::clean::{run_clean, CleanOptions};
+use crate::clean::{CleanOptions, run_clean};
 use crate::config::{Config, DeleteMode};
 use crate::event::{DiskInfo, Event, EventHandler, WorkerMsg, WorkerSender};
 use crate::model::{Category, SafetyTier, ScanResults, ScanStatus};
-use crate::privilege::{open_fda_settings, PrivilegeInfo};
+use crate::privilege::{PrivilegeInfo, open_fda_settings};
 use crate::scan::caches::start_docker_and_wait;
-use crate::scan::{run_all, ScanContext};
+use crate::scan::{ScanContext, run_all};
+use crate::ui::detail;
 use crate::ui::modal::Modal;
 use crate::ui::terminal::{PREFERRED_HEIGHT, PREFERRED_WIDTH};
-use crate::ui::detail;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
-use ratatui::Terminal;
 use std::collections::HashSet;
 use std::io;
 use std::sync::Arc;
@@ -90,9 +90,7 @@ impl App {
         self.status_line = "Starting scan…".into();
 
         for cat in &self.categories {
-            self.results
-                .status
-                .insert(*cat, ScanStatus::Pending);
+            self.results.status.insert(*cat, ScanStatus::Pending);
         }
 
         let matchers = self.config.matchers().expect("matchers");
@@ -105,8 +103,7 @@ impl App {
         run_all(ctx);
     }
 
-    /// Drive the UI. `handler` must be the same one whose `sender()` was passed
-    /// to [`App::new`], otherwise worker messages would never be received.
+    /// Drive the TUI event loop.
     pub fn run(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -153,11 +150,14 @@ impl App {
                     .insert(cat, ScanStatus::Scanning { found: 0, bytes: 0 });
                 self.status_line = format!("Scanning {}…", cat.title());
             }
-            WorkerMsg::ScanProgress { category, found, bytes } => {
-                self.results.status.insert(
-                    category,
-                    ScanStatus::Scanning { found, bytes },
-                );
+            WorkerMsg::ScanProgress {
+                category,
+                found,
+                bytes,
+            } => {
+                self.results
+                    .status
+                    .insert(category, ScanStatus::Scanning { found, bytes });
                 self.status_line = format!(
                     "Scanning {} — {found} items, {}",
                     category.title(),
@@ -186,11 +186,7 @@ impl App {
             }
             WorkerMsg::ScanComplete => {}
             WorkerMsg::CleanProgress { done, total, freed } => {
-                self.modal = Modal::CleanProgress {
-                    done,
-                    total,
-                    freed,
-                };
+                self.modal = Modal::CleanProgress { done, total, freed };
             }
             WorkerMsg::CleanDone { freed, failures } => {
                 self.cleaning = false;
@@ -207,7 +203,6 @@ impl App {
 
     fn handle_input(&mut self, ev: crossterm::event::Event) -> bool {
         if let crossterm::event::Event::Key(key) = ev {
-            // Modal handling takes priority.
             if !matches!(self.modal, Modal::None) {
                 return self.handle_modal_key(key);
             }
@@ -352,7 +347,6 @@ impl App {
         let visible = self.detail_visible_rows.max(1);
         let max_scroll = len.saturating_sub(visible);
 
-        // Scroll one line only when the selection crosses the visible edge.
         if delta > 0 && self.selected_row >= self.scroll + visible {
             self.scroll = (self.scroll + 1).min(max_scroll);
         } else if delta < 0 && self.selected_row < self.scroll {
@@ -438,8 +432,8 @@ impl App {
             return;
         }
         self.cleaning = true;
-        let permanent = self.pending_clean_permanent
-            || self.config.delete_mode == DeleteMode::Permanent;
+        let permanent =
+            self.pending_clean_permanent || self.config.delete_mode == DeleteMode::Permanent;
         let opts = CleanOptions {
             permanent,
             dry_run: self.dry_run,
@@ -469,7 +463,7 @@ mod tests {
         let privilege = PrivilegeInfo {
             is_root: false,
             limited: true,
-            full_disk_access: true, // avoid the FDA modal in tests
+            full_disk_access: true,
         };
         App::new(
             Config::default(),
@@ -491,7 +485,11 @@ mod tests {
     }
 
     fn selected_count(a: &App, cat: Category) -> usize {
-        a.results.items_for(cat).iter().filter(|i| i.selected).count()
+        a.results
+            .items_for(cat)
+            .iter()
+            .filter(|i| i.selected)
+            .count()
     }
 
     #[test]
@@ -545,9 +543,9 @@ mod tests {
 
         a.move_row(1);
         assert_eq!(a.selected_row, 1);
-        a.move_row(50); // clamps to last row
+        a.move_row(50);
         assert_eq!(a.selected_row, 1);
-        a.move_row(-50); // clamps to first row
+        a.move_row(-50);
         assert_eq!(a.selected_row, 0);
     }
 
@@ -634,11 +632,9 @@ mod tests {
         a1.group_id = Some(1);
         a1.is_keeper = false;
         a1.selected = true;
-        a.results
-            .items
-            .insert(Category::Duplicates, vec![a0, a1]);
+        a.results.items.insert(Category::Duplicates, vec![a0, a1]);
         a.current_category = Category::Duplicates;
-        a.selected_row = 1; // promote row 1 to keeper
+        a.selected_row = 1;
 
         a.flip_keeper();
         let items = a.results.items_for(Category::Duplicates);
@@ -670,7 +666,7 @@ mod tests {
         let unsel = item(2, SafetyTier::Safe);
         let mut keeper = item(3, SafetyTier::Safe);
         keeper.selected = true;
-        keeper.is_keeper = true; // selected flag set, but not selectable
+        keeper.is_keeper = true;
         a.results
             .items
             .insert(Category::Caches, vec![sel, unsel, keeper]);
@@ -682,8 +678,8 @@ mod tests {
             .iter()
             .map(|i| i.real_bytes)
             .collect();
-        assert!(!remaining.contains(&1)); // cleaned
-        assert!(remaining.contains(&2)); // untouched
-        assert!(remaining.contains(&3)); // keeper survives
+        assert!(!remaining.contains(&1));
+        assert!(remaining.contains(&2));
+        assert!(remaining.contains(&3));
     }
 }

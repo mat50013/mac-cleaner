@@ -1,8 +1,8 @@
-//! Trash-bin scanner: list trashed files and offer to empty the bin.
+//! Trash scanner.
 
 use crate::fs_util::user_trash_dir;
 use crate::model::{Category, ItemAction, SafetyTier, ScanItem};
-use crate::scan::{label_for, path_bytes, ScanContext};
+use crate::scan::{ScanContext, label_for, path_bytes};
 use anyhow::Result;
 
 pub fn scan(_ctx: &ScanContext) -> Result<Vec<ScanItem>> {
@@ -41,15 +41,9 @@ pub fn scan(_ctx: &ScanContext) -> Result<Vec<ScanItem>> {
                 .unwrap_or_else(|| "trashed item".into());
             let label = label_for(&path, &name);
             items.push(
-                ScanItem::new(
-                    path,
-                    label,
-                    bytes,
-                    SafetyTier::Safe,
-                    Category::Trash,
-                )
-                .with_note("permanent delete — already in Trash")
-                .with_action(ItemAction::Delete),
+                ScanItem::new(path, label, bytes, SafetyTier::Safe, Category::Trash)
+                    .with_note("permanent delete — already in Trash")
+                    .with_action(ItemAction::Delete),
             );
         }
     }

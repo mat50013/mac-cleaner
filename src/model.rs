@@ -84,12 +84,12 @@ impl Category {
 
     pub fn icon(self) -> &'static str {
         match self {
-            Category::Caches => "\u{2699}",     // gear
-            Category::Logs => "\u{1F4C4}",      // page
-            Category::Duplicates => "\u{29C9}", // two joined squares
-            Category::ICloud => "\u{2601}",     // cloud
-            Category::LargeFiles => "\u{1F4E6}", // package
-            Category::Trash => "\u{1F5D1}",     // wastebasket
+            Category::Caches => "\u{2699}",
+            Category::Logs => "\u{1F4C4}",
+            Category::Duplicates => "\u{29C9}",
+            Category::ICloud => "\u{2601}",
+            Category::LargeFiles => "\u{1F4E6}",
+            Category::Trash => "\u{1F5D1}",
         }
     }
 }
@@ -257,10 +257,7 @@ impl ScanResults {
     }
 
     pub fn total_reclaimable(&self) -> u64 {
-        Category::ALL
-            .iter()
-            .map(|c| self.total_bytes(*c))
-            .sum()
+        Category::ALL.iter().map(|c| self.total_bytes(*c)).sum()
     }
 
     /// After a category scan completes, sort by priority and pre-select Safe items.
@@ -323,26 +320,23 @@ mod tests {
     fn ingest_sorts_by_priority_and_preselects_safe() {
         let mut r = ScanResults::new();
         let mut keeper = item(4000, SafetyTier::Safe);
-        keeper.is_keeper = true; // safe but locked: must NOT be auto-selected
+        keeper.is_keeper = true;
         r.ingest(
             Category::Caches,
             vec![
                 item(10, SafetyTier::Safe),
                 item(5000, SafetyTier::Safe),
-                item(6000, SafetyTier::Risky), // huge but risky -> low priority
+                item(6000, SafetyTier::Risky),
                 keeper,
             ],
         );
         let items = r.items_for(Category::Caches);
 
-        // Results are sorted by descending priority.
         for pair in items.windows(2) {
             assert!(pair[0].priority() >= pair[1].priority());
         }
-        // The 5000 safe item outranks the 6000 risky one despite being smaller.
         assert_eq!(items[0].real_bytes, 5000);
 
-        // Safe & selectable items are pre-selected; risky and keepers are not.
         let selected: Vec<u64> = items
             .iter()
             .filter(|i| i.selected)
@@ -350,8 +344,8 @@ mod tests {
             .collect();
         assert!(selected.contains(&5000));
         assert!(selected.contains(&10));
-        assert!(!selected.contains(&6000)); // risky
-        assert!(!selected.contains(&4000)); // keeper
+        assert!(!selected.contains(&6000));
+        assert!(!selected.contains(&4000));
     }
 
     #[test]
@@ -360,9 +354,9 @@ mod tests {
         let mut a = item(100, SafetyTier::Safe);
         a.selected = true;
         let mut keeper = item(200, SafetyTier::Safe);
-        keeper.selected = true; // even if flagged, keepers don't count
+        keeper.selected = true;
         keeper.is_keeper = true;
-        let b = item(300, SafetyTier::Safe); // not selected
+        let b = item(300, SafetyTier::Safe);
         r.items.insert(Category::Caches, vec![a, keeper, b]);
         assert_eq!(r.selected_items().len(), 1);
         assert_eq!(r.selected_bytes(), 100);
@@ -371,8 +365,10 @@ mod tests {
     #[test]
     fn total_reclaimable_sums_all_categories() {
         let mut r = ScanResults::new();
-        r.items.insert(Category::Caches, vec![item(100, SafetyTier::Safe)]);
-        r.items.insert(Category::Logs, vec![item(250, SafetyTier::Safe)]);
+        r.items
+            .insert(Category::Caches, vec![item(100, SafetyTier::Safe)]);
+        r.items
+            .insert(Category::Logs, vec![item(250, SafetyTier::Safe)]);
         assert_eq!(r.total_reclaimable(), 350);
     }
 }

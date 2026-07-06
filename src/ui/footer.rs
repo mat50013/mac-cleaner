@@ -3,17 +3,17 @@
 use crate::model::ScanResults;
 use crate::ui::theme;
 use crate::ui::widgets::{format_selected, spinner_frame};
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
 /// Outer footer height (including block borders) for layout.
 pub fn outer_height(terminal_width: u16) -> u16 {
     let inner_w = inner_width(terminal_width);
-    let content = 1 + key_legend(inner_w).len() as u16; // status + key row(s)
-    content + 2 // top + bottom border
+    let content = 1 + key_legend(inner_w).len() as u16;
+    content + 2
 }
 
 pub fn draw(
@@ -37,12 +37,10 @@ pub fn draw(
             Span::styled(status, theme::dim()),
         ])]
     } else {
-        vec![Line::from(vec![
-            Span::styled(
-                format_selected(results.selected_items().len(), results.selected_bytes()),
-                Style::default().fg(theme::safe()),
-            ),
-        ])]
+        vec![Line::from(vec![Span::styled(
+            format_selected(results.selected_items().len(), results.selected_bytes()),
+            Style::default().fg(theme::safe()),
+        )])]
     };
     lines.extend(key_lines);
 
@@ -56,7 +54,8 @@ fn inner_width(terminal_width: u16) -> u16 {
 
 fn key_legend(width: u16) -> Vec<Line<'static>> {
     const ONE: &str = "[Space] Select  [a] All  [A] Desel  [s] Safe  [n] Clear  [i] Inv  [d] Trash  [D] Del  [r] Scan  [?] Help  [q] Quit";
-    const TWO_TOP: &str = "[Space] Select  [a] All in category  [A] Deselect  [s] Safe  [n] Clear  [i] Invert";
+    const TWO_TOP: &str =
+        "[Space] Select  [a] All in category  [A] Deselect  [s] Safe  [n] Clear  [i] Invert";
     const TWO_BOT: &str = "[d] Trash  [D] Delete forever  [r] Rescan  [?] Help  [q] Quit";
     const COMPACT_TOP: &str = "[Space] [a/A] [s] [n] [i]";
     const COMPACT_BOT: &str = "[d] Trash  [D] Forever  [r] Rescan  [?] [q]";

@@ -1,9 +1,8 @@
-//! Filesystem helpers: sparse-aware sizing, access/creation times, path expansion.
+//! Filesystem helpers: sparse-aware sizing, timestamps, and path expansion.
 //!
-//! The single most important correctness rule of this whole app lives here:
-//! reclaimable space is measured from *allocated blocks* (`st_blocks`), never
-//! from the logical file length. A sparse `Docker.raw` reports a 1 TB length
-//! but only occupies a few GB on disk; using `.len()` would be wildly wrong.
+//! Reclaimable space is measured from allocated blocks (`st_blocks`), not from
+//! logical file length. This keeps sparse files, such as Docker VM disks, from
+//! being reported as larger than their real on-disk footprint.
 
 use std::fs::Metadata;
 use std::os::unix::fs::MetadataExt;
@@ -44,7 +43,9 @@ fn days_since(t: Option<SystemTime>) -> u32 {
 
 /// Elapsed duration since `t`, saturating at zero for clock skew.
 pub fn age(t: SystemTime) -> Duration {
-    SystemTime::now().duration_since(t).unwrap_or(Duration::ZERO)
+    SystemTime::now()
+        .duration_since(t)
+        .unwrap_or(Duration::ZERO)
 }
 
 /// The current user's home directory.
@@ -97,12 +98,8 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
-/// Recursively sum the real (sparse-aware) size of a path, following no
-/// symlinks and counting each inode at most once. Returns the total bytes.
-///
-/// This is a simple sequential walk used for individual items already known to
-/// be small-ish (a single cache dir). Bulk discovery uses the parallel walker
-/// in [`crate::scan`].
+/// Recursively sum the real size of a path without following symlinks.
+/// Hard-linked files are counted once per inode.
 pub fn dir_real_size(path: &Path, seen: &mut std::collections::HashSet<(u64, u64)>) -> u64 {
     let Ok(md) = std::fs::symlink_metadata(path) else {
         return 0;
@@ -120,7 +117,7 @@ pub fn dir_real_size(path: &Path, seen: &mut std::collections::HashSet<(u64, u64
     if !md.is_dir() {
         return 0;
     }
-    let mut total = real_size(&md); // the directory entry itself
+    let mut total = real_size(&md);
     let Ok(entries) = std::fs::read_dir(path) else {
         return total;
     };

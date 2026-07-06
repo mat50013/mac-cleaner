@@ -1,6 +1,7 @@
-//! Configuration: baked-in sensible defaults plus optional TOML overrides at
-//! `~/.config/mac-cleaner/config.toml`. Raw string lists live in [`Config`];
-//! compiled matchers (glob sets, name sets) live in [`Matchers`], built once.
+//! Configuration defaults and TOML overrides.
+//!
+//! `Config` stores user-facing values. `Matchers` stores the compiled glob and
+//! name sets used by scanners.
 
 use crate::fs_util::expand_tilde;
 use anyhow::{Context, Result};
@@ -68,9 +69,9 @@ pub struct Config {
     pub duplicates: DuplicatesConfig,
     pub large: LargeConfig,
     pub privilege: PrivilegeConfig,
-    /// Directory names never descended into (dependencies / build output).
+    /// Directory names skipped during recursive walks.
     pub exclude_dir_names: Vec<String>,
-    /// Path-component names that mark a location as user data (never removed).
+    /// Path components treated as user data.
     pub protected_names: Vec<String>,
     pub delete_mode: DeleteMode,
 }
@@ -121,10 +122,7 @@ impl Default for LogsConfig {
     fn default() -> Self {
         LogsConfig {
             age_days: 7,
-            roots: vec![
-                "~".into(),
-                "~/Library/Logs".into(),
-            ],
+            roots: vec!["~".into(), "~/Library/Logs".into()],
             dir_signatures: vec!["logs".into(), "log".into()],
             file_signatures: vec![
                 "*.log".into(),
@@ -230,12 +228,12 @@ impl Config {
         }
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading config {}", path.display()))?;
-        let cfg: Config = toml::from_str(&text)
-            .with_context(|| format!("parsing config {}", path.display()))?;
+        let cfg: Config =
+            toml::from_str(&text).with_context(|| format!("parsing config {}", path.display()))?;
         Ok(cfg)
     }
 
-    /// Write the current config to the default path (used by `--write-config`).
+    /// Write the current config to the default path.
     pub fn save_default(&self) -> Result<PathBuf> {
         let path = Config::default_path().context("no config directory available")?;
         if let Some(parent) = path.parent() {
@@ -276,7 +274,7 @@ fn existing(list: &[String]) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Precompiled pattern matchers derived from a [`Config`]. Cheap to query.
+/// Precompiled pattern matchers derived from a [`Config`].
 pub struct Matchers {
     cache_sig: GlobSet,
     log_dir_sig: GlobSet,
@@ -309,13 +307,12 @@ impl Matchers {
         self.log_file_sig.is_match(name)
     }
 
-    /// Dependency/build directory we must never descend into.
+    /// Directory name skipped during recursive scans.
     pub fn is_excluded_dir(&self, name: &str) -> bool {
         self.exclude_names.contains(name)
     }
 
-    /// User data we must never touch. Matches protected component names plus
-    /// the `Profile N` convention used by Chromium.
+    /// Protected path components plus Chromium `Profile N` directories.
     pub fn is_protected(&self, path: &Path) -> bool {
         for comp in path.components() {
             let name = comp.as_os_str().to_string_lossy();
@@ -357,7 +354,9 @@ mod tests {
     #[test]
     fn protected_paths_are_flagged() {
         let m = Config::default().matchers().unwrap();
-        assert!(m.is_protected(Path::new("/x/Application Support/Google/Chrome/Default/Cache")));
+        assert!(m.is_protected(Path::new(
+            "/x/Application Support/Google/Chrome/Default/Cache"
+        )));
         assert!(m.is_protected(Path::new("/x/Chrome/Profile 2/Cache")));
         assert!(m.is_protected(Path::new("/Users/me/.ssh/id_rsa")));
         assert!(!m.is_protected(Path::new("/Users/me/Library/Caches/com.spotify.client")));

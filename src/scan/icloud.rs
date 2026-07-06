@@ -1,8 +1,7 @@
 //! iCloud scanner: find locally-materialized files that can be evicted.
 //!
-//! `brctl evict` only works on individual iCloud documents — not binaries
+//! `brctl evict` works on individual iCloud documents, not binaries
 //! inside `.app` bundles, `node_modules`, or framework `Versions/` trees.
-//! We prune those paths up front so the list only shows actionable items.
 
 use crate::fs_util::{home_dir, inode_id, real_size};
 use crate::model::{Category, ItemAction, SafetyTier, ScanItem};
@@ -14,7 +13,7 @@ use std::path::Path;
 const MIN_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_DEPTH: usize = 24;
 
-/// Directory names we never descend into (dev trees and macOS bundles).
+/// Directory names skipped during traversal.
 const SKIP_DIR_NAMES: &[&str] = &[
     "node_modules",
     ".git",
@@ -67,7 +66,6 @@ fn walk_icloud(
             continue;
         }
 
-        // Skip iCloud placeholder files (cloud-only, not downloaded).
         if name.ends_with(".icloud") {
             continue;
         }
@@ -101,7 +99,6 @@ fn walk_icloud(
             continue;
         }
 
-        // A materialized file has no sibling .icloud placeholder.
         let placeholder = path.with_file_name(format!(".{name}.icloud"));
         if placeholder.exists() {
             continue;
@@ -114,15 +111,9 @@ fn walk_icloud(
 
         let label = display_label(root, &path);
         items.push(
-            ScanItem::new(
-                path,
-                label,
-                bytes,
-                SafetyTier::Moderate,
-                Category::ICloud,
-            )
-            .with_note("evict local copy — stays in iCloud")
-            .with_action(ItemAction::Evict),
+            ScanItem::new(path, label, bytes, SafetyTier::Moderate, Category::ICloud)
+                .with_note("evict local copy — stays in iCloud")
+                .with_action(ItemAction::Evict),
         );
     }
 }

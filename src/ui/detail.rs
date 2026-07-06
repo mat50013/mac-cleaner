@@ -1,16 +1,16 @@
-//! Detail table with checkboxes.
+//! Detail table.
 
 use crate::fs_util::human_size;
 use crate::model::{Category, ScanResults};
 use crate::ui::footer;
 use crate::ui::theme;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, Table};
-use ratatui::Frame;
 
-/// Detail panel rect (right side of body) for a given terminal size.
+/// Detail panel rectangle for a given terminal size.
 pub fn panel_rect(terminal_width: u16, terminal_height: u16) -> Rect {
     let footer_h = footer::outer_height(terminal_width);
     let chunks = Layout::vertical([
@@ -27,7 +27,7 @@ pub fn panel_rect(terminal_width: u16, terminal_height: u16) -> Rect {
     Layout::horizontal([Constraint::Length(36), Constraint::Min(20)]).split(chunks[1])[1]
 }
 
-/// Layout metrics for the detail panel (derived from the actual draw area).
+/// Layout metrics derived from the actual draw area.
 pub struct DetailMetrics {
     pub visible_data_rows: usize,
 }
@@ -38,13 +38,12 @@ pub fn metrics(detail_panel: Rect) -> DetailMetrics {
     }
 }
 
-/// Number of data rows shown in the detail table (excludes the column header row).
+/// Number of data rows shown below the table header.
 pub fn visible_data_rows(detail_panel: Rect) -> usize {
-    let block = theme::block(""); // title sits on border; same inner size as a titled block
+    let block = theme::block("");
     let inner = block.inner(detail_panel);
     let banner_h = selection_hints(inner.width).len() as u16;
     let table_h = inner.height.saturating_sub(banner_h);
-    // One row is the table column header; the rest are data rows.
     usize::from(table_h.saturating_sub(1).max(1))
 }
 
@@ -112,7 +111,9 @@ pub fn draw(
                 "[ ]"
             };
             let row_style = if i == selected_row {
-                Style::default().bg(theme::surface()).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(theme::surface())
+                    .add_modifier(Modifier::BOLD)
             } else {
                 theme::tier_style(item.tier)
             };
@@ -141,9 +142,6 @@ pub fn draw(
 
     let table = Table::new(rows, widths).header(header);
     f.render_widget(table, table_area);
-
-    // Draw size bars over the bar column (approximate overlay).
-    // Simpler: size is in its own column; bars shown in label truncation.
 
     if items.len() > visible {
         let mut state = ratatui::widgets::ScrollbarState::new(items.len()).position(scroll);

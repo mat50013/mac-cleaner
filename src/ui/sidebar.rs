@@ -3,11 +3,11 @@
 use crate::fs_util::human_size;
 use crate::model::{Category, ScanResults};
 use crate::ui::theme;
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem};
-use ratatui::Frame;
 
 pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults, current: Category) {
     let items: Vec<ListItem> = Category::ALL

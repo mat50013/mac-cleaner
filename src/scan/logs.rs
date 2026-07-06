@@ -1,8 +1,8 @@
-//! Log scanner: generic detection of `logs`/`log` dirs and `*.log` files anywhere.
+//! Log scanner.
 
 use crate::fs_util::atime_days;
 use crate::model::{Category, ItemAction, SafetyTier, ScanItem};
-use crate::scan::{item_from_dir, label_for, path_bytes, walk_parallel, ScanContext};
+use crate::scan::{ScanContext, item_from_dir, label_for, path_bytes, walk_parallel};
 use anyhow::Result;
 use std::collections::HashSet;
 use std::os::unix::fs::MetadataExt;
@@ -96,7 +96,6 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
 
     items.append(&mut items_mtx.into_inner().unwrap());
 
-    // System logs when running as root.
     let sys_log = PathBuf::from("/private/var/log");
     if sys_log.is_dir() && crate::privilege::is_root() {
         let bytes = path_bytes(&sys_log);

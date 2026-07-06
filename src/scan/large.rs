@@ -1,8 +1,8 @@
-//! Large-file scanner: files above a size threshold in user folders.
+//! Large-file scanner.
 
 use crate::fs_util::{atime_days, real_size};
 use crate::model::{Category, SafetyTier, ScanItem};
-use crate::scan::{label_for, walk_parallel, ScanContext};
+use crate::scan::{ScanContext, label_for, walk_parallel};
 use anyhow::Result;
 use std::sync::Mutex;
 

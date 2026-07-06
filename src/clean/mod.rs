@@ -1,4 +1,4 @@
-//! Deletion engine: trash, truncate, docker prune, iCloud evict, empty Trash.
+//! Cleaning engine.
 
 use crate::config::DeleteMode;
 use crate::event::{WorkerMsg, WorkerSender};
@@ -49,8 +49,6 @@ fn clean_one(item: &ScanItem, opts: &CleanOptions) -> Result<u64, String> {
             if !item.path.exists() {
                 return Ok(0);
             }
-            // Never move something to Trash twice — paths already in ~/.Trash,
-            // or anything under the Trash category, are deleted permanently.
             if should_delete_permanently(item, opts) {
                 remove_path_permanently(&item.path)?;
             } else {
@@ -135,8 +133,7 @@ fn remove_path_permanently(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Empty the user Trash. Prefer Finder (handles macOS quirks); fall back to
-/// deleting `~/.Trash` contents directly.
+/// Empty Trash through Finder, then fall back to removing `~/.Trash` contents.
 fn empty_trash() -> Result<(), String> {
     if finder_empty_trash() {
         return Ok(());

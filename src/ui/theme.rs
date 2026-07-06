@@ -1,9 +1,7 @@
 //! Color palette and style helpers.
 //!
-//! macOS **Terminal.app** does not support 24-bit `Color::Rgb` (truecolor).
-//! Crossterm emits RGB escape codes anyway, so colors appear missing or glitchy.
-//! We detect the terminal once at startup and use a 256-color indexed palette
-//! when truecolor is unavailable.
+//! Terminal.app does not render truecolor reliably, so the palette falls back
+//! to xterm-256 colors when needed.
 
 use crate::model::Category;
 use ratatui::style::{Color, Modifier, Style};
@@ -33,7 +31,6 @@ struct Palette {
 
 static PALETTE: OnceLock<Palette> = OnceLock::new();
 
-/// Call once before drawing the TUI (from [`crate::run_tui`]).
 pub fn init() {
     let _ = PALETTE.set(Palette::for_terminal());
 }
@@ -44,7 +41,6 @@ fn palette() -> &'static Palette {
 
 /// Whether the current terminal is expected to render `Color::Rgb` correctly.
 pub fn supports_truecolor() -> bool {
-    // Terminal.app sets TERM_PROGRAM=Apple_Terminal and does NOT handle RGB.
     if terminal_is_apple_terminal() {
         return false;
     }
@@ -65,7 +61,9 @@ pub fn supports_truecolor() -> bool {
 }
 
 fn terminal_is_apple_terminal() -> bool {
-    std::env::var("TERM_PROGRAM").map(|t| t == "Apple_Terminal").unwrap_or(false)
+    std::env::var("TERM_PROGRAM")
+        .map(|t| t == "Apple_Terminal")
+        .unwrap_or(false)
 }
 
 impl Palette {
@@ -100,7 +98,6 @@ impl Palette {
         }
     }
 
-    /// xterm-256 palette — works in Terminal.app and most default emulators.
     fn indexed() -> Self {
         Self {
             surface: Color::Indexed(235),
