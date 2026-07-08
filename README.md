@@ -1,92 +1,87 @@
 # mac-cleaner
 
-[![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square)](https://www.rust-lang.org/)
-[![Platform](https://img.shields.io/badge/platform-macOS-blue?style=flat-square)](https://www.apple.com/macos/)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](#license)
+A terminal UI that finds the disk space macOS quietly wastes — caches, build
+artifacts, dependency folders, logs, duplicate downloads — and helps you take
+it back.
 
-![mac-cleaner dashboard — reclaimable space by category](assets/dashboard.png)
+Everything it targets is regenerable: data your machine can recreate,
+re-download, or rebuild on demand. That kind of data is useless to keep, takes
+real space, and is scattered across so many tool-specific folders that nobody
+finds it by hand. mac-cleaner does the finding; you review and decide.
 
-**Data-driven macOS cleanup with a fast terminal UI and one simple rule: review the evidence before deleting anything.**
+![Dashboard: reclaimable space by category](assets/dashboard.png)
 
-mac-cleaner measures real disk usage, verifies duplicates by hash, groups reclaimable space by category, and shows exactly what will be removed before you commit. No mystery buttons. No blind "optimize" switch. Just the data you need to reclaim space with confidence.
+## Why this exists
 
-## Contents
+The space that disappears on a Mac usually isn't documents or photos. It's
+what tools leave behind and never clean up:
 
-- [Why mac-cleaner](#why-mac-cleaner)
-- [What it finds](#what-it-finds)
-- [Safety model](#safety-model)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Quick start](#quick-start)
-- [Command line](#command-line)
-- [Permissions](#permissions)
-- [Configuration](#configuration)
-- [How it works](#how-it-works)
-- [Development](#development)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+- `~/Library/Caches` grows without bound — browsers, package managers, and
+  every Electron app keep their own private stash there.
+- Every project you ever built still carries its `target`, `node_modules`,
+  `.venv`, or `build` folder, often gigabytes each.
+- Xcode keeps DerivedData, device support files, and old simulators long after
+  you need them.
+- The same installer sits in Downloads twice because the second download got a
+  ` (1)` suffix.
+- Logs rotate but never get deleted.
 
-## Why mac-cleaner
-
-Most cleaners ask you to trust them. mac-cleaner shows its work.
-
-- **See the space first.** The dashboard breaks reclaimable space down by category and refreshes as you clean.
-- **Clean only what is redundant.** Duplicates are hash-verified, caches/logs/dev artifacts are matched by known signatures, and iCloud files are evicted rather than deleted.
-- **Stay in control.** Every item is visible, selectable, and color-coded by risk before anything happens.
-- **Recover by default.** Normal cleanup moves files to the Trash unless you explicitly choose permanent deletion.
-- **Respect macOS.** Sparse files, Trash semantics, Full Disk Access, iCloud offload, and protected app data are all handled deliberately.
+None of this is precious. Delete a cache and the app rebuilds it; delete
+`node_modules` and `npm install` restores it. The hard part was never deciding
+— it's knowing where all of it lives. mac-cleaner scans those places in
+parallel, measures real on-disk usage, and puts everything in one reviewable
+list.
 
 ## What it finds
 
-| Category | What mac-cleaner looks for |
+| Category | Contents |
 | --- | --- |
-| **Caches** | Cache-signature directories (`Cache`, `Code Cache`, `GPUCache`, `*.ShipIt`, …), developer tool caches, and Docker prune targets |
-| **Logs** | `logs` / `log` directories and `*.log` files across your home folder |
-| **Dev Artifacts** | Regenerable project outputs and dependencies such as `target`, `build`, `.terraform`, `.dart_tool`, `node_modules`, `.venv`, and simulator/Xcode artifacts |
-| **Duplicates** | Same-size files confirmed with a partial hash and a full `blake3` hash |
-| **iCloud** | Large local iCloud Drive copies that can be evicted while staying available in iCloud |
-| **Large Files** | Big files in common user folders, plus stale installers/archives in Downloads/Desktop |
-| **Trash** | Current Trash size, with the option to empty it permanently |
+| Caches | Cache directories matched by signature (`Cache`, `Code Cache`, `GPUCache`, …), package manager caches (Homebrew, pip, npm, cargo, …), Docker prune targets |
+| Logs | `*.log` files and log folders across your home directory |
+| Dev Artifacts | Generated project output (`target`, `build`, `dist`, `.next`, `.terraform`) and dependency folders (`node_modules`, `.venv`), plus Xcode DerivedData and simulator data |
+| Duplicates | Byte-identical files, confirmed by hash — the oldest copy is kept |
+| iCloud Offload | Large local iCloud Drive copies that can be evicted (freed locally, kept in iCloud) |
+| Large Files | Big files in common user folders, and stale installers/archives in Downloads |
+| Trash Bin | What's already in the Trash, ready to be emptied |
 
-## Safety model
+## How it decides what's safe
 
-mac-cleaner is conservative by default.
+Every item gets a risk tier, and the tier controls the default:
 
-- **Review first.** Nothing is cleaned until you select it and confirm.
-- **Trash by default.** Use Finder's *Put Back* to undo a normal cleanup.
-- **Permanent delete is explicit.** Press `D`, never `d`, to bypass the Trash.
-- **Duplicate keepers are locked.** The oldest copy in each set is kept unless you pick a different keeper.
-- **Developer artifacts are review-first.** Build outputs and dependency folders are usually regenerable, but they are not auto-selected because cleanup can force rebuilds or reinstalls.
-- **Protected paths are skipped.** Browser profiles, keychains, SSH/GPG data, the Photos library, Steam, and similar sensitive folders are never touched.
-- **Real sizes only.** Space is measured from allocated blocks, so sparse files (like `Docker.raw`) are never overcounted.
+- **safe** — regenerable at no cost (caches, old logs). Selected automatically.
+- **moderate** — regenerable at a price: deleting `node_modules` means
+  reinstalling, deleting DerivedData means a rebuild. Never auto-selected;
+  shown for review.
+- **risky** — user data the tool can't vouch for (large files, duplicate
+  keepers). Never auto-selected.
 
-## Requirements
+A few more rules back that up:
 
-- macOS
-- [Rust and Cargo](https://rustup.rs/) (stable) to build from source
-- *(Optional)* Docker Desktop — enables build-cache and image reclaim under Caches
+- Deleting moves files to the Trash. Permanent deletion is a separate key
+  (`D`) with its own confirmation.
+- In a duplicate set, one copy is always locked as the keeper. You can move
+  the lock, but you can't delete every copy.
+- Protected paths — browser profiles, keychains, SSH/GPG keys, the Photos
+  library — are skipped entirely, no matter what they contain.
+- Sizes come from allocated disk blocks, so sparse files like `Docker.raw`
+  are counted at their real size, not their apparent one.
 
-## Installation
+## Install
 
-Install the latest version straight from GitHub:
+With [Rust](https://rustup.rs/) installed:
 
 ```bash
 cargo install --git https://github.com/mat50013/mac-cleaner.git
 ```
 
-This places the `mac-cleaner` binary in `~/.cargo/bin`. Make sure that directory is on your `PATH` (rustup usually configures this for you):
+The binary lands in `~/.cargo/bin`. If `mac-cleaner` isn't found afterwards,
+that directory is missing from your `PATH`:
 
 ```bash
-export PATH="$HOME/.cargo/bin:$PATH"   # add to ~/.zshrc if it isn't already
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && exec zsh
 ```
 
-Confirm it resolves:
-
-```bash
-which mac-cleaner   # → /Users/<you>/.cargo/bin/mac-cleaner
-```
-
-Prefer to run from a clone instead? That never needs a `PATH` change:
+Or run it straight from a clone, no `PATH` setup needed:
 
 ```bash
 git clone https://github.com/mat50013/mac-cleaner.git
@@ -94,95 +89,75 @@ cd mac-cleaner
 cargo run --release
 ```
 
-## Quick start
+## Using it
 
-Launch the interactive TUI:
+Start `mac-cleaner` and it scans immediately. The dashboard shows where the
+space is; `Tab` opens each category as a table you can work through:
 
-```bash
-mac-cleaner
-```
-
-Scan, review the dashboard, open a category, select what you want, then clean.
+![Category view: the Caches table with sizes, bars, and risk tiers](assets/detail.png)
 
 | Key | Action |
 | --- | --- |
-| `Tab` / `Shift+Tab` | Cycle between the Dashboard and each category |
-| `↑` / `↓` or `j` / `k` | Move the selection |
+| `Tab` / `Shift+Tab` | Next / previous view — the dashboard comes first |
+| `↑` `↓` or `j` `k` | Move between rows |
 | `Space` | Toggle the highlighted item |
-| `a` / `A` | Select all / deselect all in the category |
-| `s` | Select every Safe item across all categories |
-| `n` | Clear all selections |
-| `i` | Invert the selection in the category |
-| `Enter` | Duplicates: choose which copy to keep |
+| `a` / `A` | Select / deselect everything in the category |
+| `s` | Select every safe item, across all categories |
+| `i` / `n` | Invert the category / clear all selections |
+| `Enter` | In Duplicates: choose which copy to keep |
 | `d` | Move selected items to the Trash |
 | `D` | Delete selected items permanently |
 | `r` | Rescan |
 | `?` | Help |
-| `q` / `Esc` | Quit |
+| `q` | Quit |
 
-## Command line
+A typical session: press `s` to grab everything safe, `Tab` through Dev
+Artifacts and Duplicates to add what you recognize, `d` to clean, then `r` and
+empty the Trash Bin category.
 
-Every workflow is scriptable without opening the TUI.
+### Scripting
+
+The same scanners run headless:
 
 ```bash
-# Scan and print a summary table
-mac-cleaner scan
-
-# Machine-readable output
-mac-cleaner scan --json
-
-# Limit the scan to specific categories
-mac-cleaner scan --categories caches,dev,large
-
-# Clean the auto-selected Safe items in a category (skips the prompt)
+mac-cleaner scan                          # summary table
+mac-cleaner scan --json                   # machine-readable
+mac-cleaner scan --categories caches,dev  # limit the scan
 mac-cleaner clean --categories caches --yes
-
-# Preview any action without deleting a thing
-mac-cleaner --dry-run
-
-# Write a default config file you can edit
-mac-cleaner init-config
+mac-cleaner --dry-run                     # preview, delete nothing
 ```
 
-Valid category slugs: `caches`, `logs`, `dev`, `duplicates`, `icloud`, `large`, `trash`.
+Category slugs: `caches`, `logs`, `dev`, `duplicates`, `icloud`, `large`,
+`trash`.
 
-## Permissions
+### Permissions
 
-mac-cleaner requests administrator privileges at launch (via `sudo`) so it can size system-level caches and other users' data. Your password is entered directly in the terminal, and the TUI renders normally afterward.
-
-Skip elevation when you only want to clean your own user folders:
-
-```bash
-mac-cleaner --no-elevate
-```
-
-**Full Disk Access** is separate from `sudo`. macOS may require it for Mail, Safari, and other TCC-protected locations. If access is limited, mac-cleaner detects it and can open the correct pane in System Settings → Privacy & Security → Full Disk Access.
+At launch, mac-cleaner asks for administrator rights via `sudo` so it can size
+system-level caches. Skip that with `--no-elevate` to clean only your own
+files. Full Disk Access is a separate macOS permission; if it's missing, the
+app detects it and offers to open the right System Settings pane.
 
 ## Configuration
 
-Configuration is optional. Generate a starter file:
+Optional. Generate a starting point with:
 
 ```bash
 mac-cleaner init-config   # writes ~/.config/mac-cleaner/config.toml
 ```
 
-Every field is optional — anything you omit falls back to a sensible default.
+Anything you leave out keeps its default:
 
 ```toml
-# Trash by default; use "permanent" to skip the Trash entirely.
-delete_mode = "trash"
+delete_mode = "trash"     # or "permanent"
 
 [cache]
-roots = [
-  "~/Library/Caches",
-  "~/Library/Application Support",
-]
+roots = ["~/Library/Caches", "~/Library/Application Support"]
 
 [logs]
-age_days = 7            # logs older than this are treated as Safe
+age_days = 7              # older than this counts as safe
 
 [large]
-min_bytes = 104857600   # 100 MB — the Large Files threshold
+min_bytes = 104857600     # 100 MB threshold for Large Files
 stale_archive_min_bytes = 26214400
 stale_archive_days = 30
 
@@ -192,49 +167,50 @@ artifact_dir_names = ["target", "build", "dist", ".next", ".terraform"]
 dependency_dir_names = ["node_modules", ".venv", "venv"]
 
 [duplicates]
-min_bytes = 1048576     # 1 MB — ignore anything smaller when hashing
+min_bytes = 1048576       # ignore files under 1 MB when hashing
 
 [privilege]
-auto_elevate = true     # request sudo at launch
+auto_elevate = true
 ```
 
-## How it works
+## How the scan works
 
-1. **Parallel scanning.** Each category walks its configured roots with the `ignore` crate, using `rayon` for hashing work.
-2. **Real-size accounting.** Sizes come from allocated blocks, so sparse files are never overcounted.
-3. **Duplicate detection.** Files are bucketed by size, screened with a partial hash, then confirmed with a full-file `blake3` hash.
-4. **Risk scoring.** Size, safety tier, and staleness combine into a priority that surfaces the biggest safe wins first.
-5. **Background workers.** Scanning and cleaning run off the UI thread and stream progress back over channels, so the interface stays responsive.
+Categories scan in parallel on a bounded thread pool sized from your CPU
+count, so a full scan takes seconds without saturating the machine. Directory
+walks use the `ignore` crate; duplicate detection buckets files by size,
+screens them with a partial hash, and confirms with a full `blake3` hash
+before anything is called a duplicate. Scanning and cleaning both run off the
+UI thread and stream progress back, so the interface never blocks.
 
 ## Development
 
 ```bash
-# Build
 cargo build
+cargo test              # unit + integration tests
+cargo test -- --ignored # also the tests that touch the real Trash
+cargo fmt && cargo clippy
+```
 
-# Run the full test suite (unit + integration)
-cargo test
+The README screenshots are rendered from the actual UI:
 
-# Include tests that touch the real macOS Trash
-cargo test -- --ignored
-
-# Format
-cargo fmt
+```bash
+cargo run --example ui_svg
+rsvg-convert -o assets/dashboard.png assets/dashboard.svg
+rsvg-convert -o assets/detail.png assets/detail.svg
 ```
 
 ## Troubleshooting
 
-**`mac-cleaner: command not found` after install.** `~/.cargo/bin` isn't on your `PATH`. Add `export PATH="$HOME/.cargo/bin:$PATH"` to `~/.zshrc`, then restart your shell — or run the binary by full path.
+**`command not found` after install** — `~/.cargo/bin` isn't on your `PATH`;
+see [Install](#install).
 
-**"The file … is locked. (-45)" when cleaning.** The file has macOS's locked/immutable flag set. Clear it and clean again:
+**"The file … is locked. (-45)"** — the file has macOS's locked flag set.
+Clear it with `chflags nouchg "/path/to/file"` (or untick Locked in Finder's
+Get Info), then clean again.
 
-```bash
-chflags nouchg "/path/to/file"
-```
-
-Or uncheck **Locked** in Finder's *Get Info*. Permanent delete (`D`) can also get past a locked file once the flag is cleared.
-
-**A delete fails with "Operation not permitted."** Some files (often in `~/Downloads` when running elevated) resist being moved to the Trash as root. Try permanent delete (`D`), or relaunch with `--no-elevate` for user-only cleanup.
+**"Operation not permitted" when deleting** — some files resist being moved
+to the Trash while running as root. Use permanent delete (`D`), or relaunch
+with `--no-elevate`.
 
 ## License
 

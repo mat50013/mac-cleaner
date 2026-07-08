@@ -38,13 +38,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         chunks[0],
         app.disk,
         app.results.total_reclaimable(),
+        app.results.selected_bytes(),
         app.privilege.limited,
     );
 
     let body = Layout::horizontal([Constraint::Length(36), Constraint::Min(20)]).split(chunks[1]);
 
     match app.view {
-        MainView::Dashboard => dashboard::draw(f, body[1], &app.results),
+        MainView::Dashboard => dashboard::draw(f, body[1], &app.results, app.scanning),
         MainView::Category(cat) => {
             let metrics = detail::metrics(body[1]);
             app.detail_visible_rows = metrics.visible_data_rows;

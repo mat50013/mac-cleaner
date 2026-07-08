@@ -1,18 +1,26 @@
-//! Header: title, disk gauge, reclaimable total.
+//! Header: title, totals, and disk gauge.
 
 use crate::event::DiskInfo;
 use crate::fs_util::human_size;
 use crate::ui::theme;
+use crate::ui::widgets::{key_hint_line, key_hint_width};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{LineGauge, Paragraph};
 
-const LEFT_W: u16 = 22;
+const LEFT_W: u16 = 46;
 const MIN_GAUGE_W: u16 = 10;
 
-pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited: bool) {
+pub fn draw(
+    f: &mut Frame,
+    area: Rect,
+    disk: DiskInfo,
+    reclaimable: u64,
+    selected: u64,
+    limited: bool,
+) {
     let chunks = Layout::horizontal([
         Constraint::Length(LEFT_W.min(area.width)),
         Constraint::Min(MIN_GAUGE_W + 8),
@@ -20,21 +28,26 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
     .split(area);
 
     let title = if limited {
-        " mac-cleaner  [limited] "
+        concat!(" mac-cleaner v", env!("CARGO_PKG_VERSION"), " — limited ")
     } else {
-        " mac-cleaner "
+        concat!(" mac-cleaner v", env!("CARGO_PKG_VERSION"), " ")
     };
     let block = theme::block(title);
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("Reclaimable: ", theme::dim()),
-            Span::styled(
-                human_size(reclaimable),
-                Style::default().fg(theme::safe()).bold(),
-            ),
-        ])),
-        block.inner(chunks[0]),
-    );
+    let mut totals = vec![
+        Span::styled("Reclaimable ", theme::dim()),
+        Span::styled(
+            human_size(reclaimable),
+            Style::default().fg(theme::safe()).bold(),
+        ),
+    ];
+    if selected > 0 {
+        totals.push(Span::styled("  ·  Selected ", theme::dim()));
+        totals.push(Span::styled(
+            human_size(selected),
+            Style::default().fg(theme::accent()).bold(),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(totals)), block.inner(chunks[0]));
     f.render_widget(block, chunks[0]);
 
     let disk_block = theme::block(" Disk ");
@@ -46,8 +59,8 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
         .width
         .saturating_sub(MIN_GAUGE_W)
         .saturating_sub(1);
-    let hint = hint_text(hint_room);
-    let hint_w = hint.len() as u16;
+    let hints = hint_pairs(hint_room);
+    let hint_w = key_hint_width(hints) as u16;
 
     if hint_w > 0 && disk_inner.width > MIN_GAUGE_W + hint_w {
         let cols = Layout::horizontal([
@@ -65,8 +78,7 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
             .ratio(disk.used_ratio());
         f.render_widget(gauge, cols[0]);
 
-        let hint_para = Paragraph::new(Line::from(Span::styled(hint, theme::text())))
-            .alignment(Alignment::Right);
+        let hint_para = Paragraph::new(key_hint_line(hints)).alignment(Alignment::Right);
         f.render_widget(hint_para, cols[2]);
     } else {
         let gauge = LineGauge::default()
@@ -80,15 +92,15 @@ pub fn draw(f: &mut Frame, area: Rect, disk: DiskInfo, reclaimable: u64, limited
 }
 
 /// Shortcut hints shown beside the disk gauge (same row).
-fn hint_text(hint_room: u16) -> &'static str {
-    if hint_room >= 24 {
-        "[?] Help  |  [r] Rescan"
-    } else if hint_room >= 18 {
-        "[?] Help  [r] Rescan"
-    } else if hint_room >= 8 {
-        "[?]  [r]"
+fn hint_pairs(hint_room: u16) -> &'static [(&'static str, &'static str)] {
+    if hint_room >= 26 {
+        &[("?", "help"), ("r", "rescan"), ("q", "quit")]
+    } else if hint_room >= 17 {
+        &[("?", "help"), ("r", "rescan")]
+    } else if hint_room >= 5 {
+        &[("?", ""), ("r", "")]
     } else {
-        ""
+        &[]
     }
 }
 
@@ -113,8 +125,13 @@ mod tests {
 
     #[test]
     fn hint_scales_with_room() {
-        assert!(hint_text(24).contains("Rescan"));
-        assert!(hint_text(10).len() <= 10);
-        assert_eq!(hint_text(4), "");
+        for room in [40u16, 26, 20, 17, 8, 5] {
+            assert!(
+                key_hint_width(hint_pairs(room)) <= room as usize,
+                "hints overflow at room {room}"
+            );
+        }
+        assert!(!hint_pairs(26).is_empty());
+        assert!(hint_pairs(3).is_empty());
     }
 }

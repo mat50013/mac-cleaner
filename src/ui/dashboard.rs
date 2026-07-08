@@ -3,6 +3,7 @@
 use crate::fs_util::human_size;
 use crate::model::{Category, ScanResults};
 use crate::ui::theme;
+use crate::ui::widgets::key_hint_line;
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -19,8 +20,8 @@ struct Slice {
     end: f64,
 }
 
-pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults) {
-    let block = theme::block(" Reclaimable by category ");
+pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults, scanning: bool) {
+    let block = theme::block(" Dashboard — reclaimable space ");
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -30,12 +31,18 @@ pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults) {
 
     let total = results.total_reclaimable();
     if total == 0 {
-        let msg = Paragraph::new(Line::from(vec![Span::styled(
-            "No reclaimable space found yet",
-            theme::dim(),
-        )]))
-        .centered();
-        f.render_widget(msg, inner);
+        let text = if scanning {
+            "Scanning your Mac — results appear here as categories finish."
+        } else {
+            "No reclaimable space found yet — press r to rescan."
+        };
+        let msg = Paragraph::new(Line::from(Span::styled(text, theme::dim()))).centered();
+        let mid = Rect {
+            y: inner.y + inner.height / 2,
+            height: 1,
+            ..inner
+        };
+        f.render_widget(msg, mid);
         return;
     }
 
@@ -44,10 +51,27 @@ pub fn draw(f: &mut Frame, area: Rect, results: &ScanResults) {
         return;
     }
 
-    let cols = Layout::horizontal([Constraint::Percentage(58), Constraint::Min(22)]).split(inner);
+    let chart_area = Rect {
+        height: inner.height.saturating_sub(2),
+        ..inner
+    };
+    let cols =
+        Layout::horizontal([Constraint::Percentage(58), Constraint::Min(22)]).split(chart_area);
 
     draw_pie(f.buffer_mut(), cols[0], &slices, total);
-    draw_legend(f, cols[1], &slices, total);
+    draw_legend(f, cols[1], &slices, results, total);
+
+    let hint_area = Rect {
+        y: inner.y + inner.height.saturating_sub(1),
+        height: 1,
+        ..inner
+    };
+    let hint = key_hint_line(&[
+        ("Tab", "open a category"),
+        ("s", "select everything safe"),
+        ("d", "clean"),
+    ]);
+    f.render_widget(Paragraph::new(hint).centered(), hint_area);
 }
 
 fn build_slices(results: &ScanResults, total: u64) -> Vec<Slice> {
@@ -128,24 +152,38 @@ fn draw_pie(buf: &mut Buffer, area: Rect, slices: &[Slice], total: u64) {
     center.render(label_area, buf);
 }
 
-fn draw_legend(f: &mut Frame, area: Rect, slices: &[Slice], total: u64) {
-    let mut lines: Vec<Line> = Vec::with_capacity(slices.len() + 1);
+fn draw_legend(f: &mut Frame, area: Rect, slices: &[Slice], results: &ScanResults, total: u64) {
+    let mut lines: Vec<Line> = Vec::with_capacity(slices.len() + 2);
     lines.push(Line::from(Span::styled("Breakdown", theme::title_style())));
     lines.push(Line::from(""));
 
     for slice in slices {
         let pct = slice.bytes as f64 / total as f64 * 100.0;
+        let count = results.items_for(slice.category).len();
+        let count_text = if count == 1 {
+            "  1 item".to_string()
+        } else {
+            format!("  {count} items")
+        };
         lines.push(Line::from(vec![
             Span::styled("██ ", Style::default().fg(slice.color)),
+            Span::styled(format!("{:<14}", slice.category.title()), theme::text()),
             Span::styled(
-                format!("{} {}  ", slice.category.icon(), slice.category.title()),
-                theme::text(),
+                format!("{:>9}", human_size(slice.bytes)),
+                Style::default().fg(slice.color),
             ),
-            Span::styled(human_size(slice.bytes), Style::default().fg(slice.color)),
-            Span::styled(format!("  ({pct:.0}%)",), theme::dim()),
+            Span::styled(format!("{:>5.0}%", pct), theme::dim()),
+            Span::styled(count_text, theme::dim()),
         ]));
     }
 
-    let legend = Paragraph::new(lines);
-    f.render_widget(legend, area);
+    // Vertically center the legend beside the pie.
+    let legend_h = lines.len() as u16;
+    let y_offset = area.height.saturating_sub(legend_h) / 2;
+    let centered = Rect {
+        y: area.y + y_offset,
+        height: area.height.saturating_sub(y_offset),
+        ..area
+    };
+    f.render_widget(Paragraph::new(lines), centered);
 }

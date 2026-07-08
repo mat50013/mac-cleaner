@@ -18,6 +18,7 @@ struct Palette {
     moderate: Color,
     risky: Color,
     highlight: Color,
+    selection_bg: Color,
     cat_caches: Color,
     cat_logs: Color,
     cat_dev_artifacts: Color,
@@ -87,6 +88,7 @@ impl Palette {
             moderate: Color::Rgb(240, 200, 80),
             risky: Color::Rgb(240, 100, 100),
             highlight: Color::Rgb(180, 140, 255),
+            selection_bg: Color::Rgb(48, 54, 80),
             cat_caches: Color::Rgb(100, 180, 255),
             cat_logs: Color::Rgb(255, 175, 90),
             cat_dev_artifacts: Color::Rgb(120, 220, 170),
@@ -111,6 +113,7 @@ impl Palette {
             moderate: Color::Indexed(221),
             risky: Color::Indexed(203),
             highlight: Color::Indexed(141),
+            selection_bg: Color::Indexed(238),
             cat_caches: Color::Indexed(111),
             cat_logs: Color::Indexed(215),
             cat_dev_artifacts: Color::Indexed(115),
@@ -141,6 +144,10 @@ pub fn highlight() -> Color {
     palette().highlight
 }
 
+pub fn selection_bg() -> Color {
+    palette().selection_bg
+}
+
 pub fn title_style() -> Style {
     Style::default()
         .fg(palette().accent)
@@ -149,6 +156,21 @@ pub fn title_style() -> Style {
 
 pub fn dim() -> Style {
     Style::default().fg(palette().dim)
+}
+
+/// Style for keyboard shortcut "caps" in hints and legends.
+pub fn key_style() -> Style {
+    Style::default()
+        .fg(palette().accent)
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Style for the cursor row in tables and lists.
+pub fn selected_row_style() -> Style {
+    Style::default()
+        .bg(palette().selection_bg)
+        .fg(palette().text)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub fn text() -> Style {

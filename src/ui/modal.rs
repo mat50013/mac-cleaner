@@ -4,6 +4,7 @@ use crate::fs_util::human_size;
 use crate::ui::theme;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
 #[derive(Debug, Clone)]
@@ -124,47 +125,110 @@ fn draw_centered_sized(f: &mut Frame, area: Rect, title: &str, body: &str, pct_x
 }
 
 fn draw_help(f: &mut Frame, area: Rect) {
-    let text = "\
-Overview\n\
-  Dashboard: pie chart of reclaimable space per category (updates as you clean).\n\
-  Tab / Shift+Tab: cycle Dashboard and category item lists.\n\
-  r: rescan (use after cleaning to refresh Trash, etc.)\n\n\
-Categories\n\
-  Caches      app & dev caches (Docker prune when running)\n\
-  Logs        log files and log folders\n\
-  Dev         generated project artifacts and dependency folders\n\
-  Duplicates  identical files — oldest kept by default\n\
-  iCloud      local copies that can be evicted to iCloud\n\
-  Large Files big files to review manually\n\
-  Trash Bin   items already in Trash — always deleted forever\n\n\
-Safety colors\n\
-  green  = safe, auto-selected (regenerable caches/logs)\n\
-  yellow = review first (moderate risk)\n\
-  red    = risky / duplicate keeper (not selected by default)\n\n\
-Navigation\n\
-  ↑/↓ or j/k       move row\n\
-  Tab / Shift+Tab  Dashboard / previous / next category\n\n\
-Selection\n\
-  Space   toggle current item\n\
-  a       select ALL in this category\n\
-  A       deselect entire category\n\
-  s       select all Safe items (all categories)\n\
-  n       clear all selections\n\
-  i       invert selection in category\n\
-  Enter   Duplicates: pick which copy to keep\n\
-          Caches: start Docker if shown\n\n\
-Clean\n\
-  d   move selected items to Trash (reversible in Finder)\n\
-  D   delete selected FOREVER (cannot undo)\n\
-  y/n confirm in the dialog\n\n\
-Tips\n\
-  Trash Bin items are always permanent delete, even with d.\n\
-  After cleaning caches/logs with d, rescan then empty Trash Bin.\n\
-  ? or any key — close help    q / Esc — quit\n";
-    draw_popup_sized(f, area, " Help ", text, 72, 78);
+    use crate::model::SafetyTier;
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    let section = |lines: &mut Vec<Line<'static>>, name: &'static str| {
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(name, theme::title_style())));
+    };
+    let entry = |lines: &mut Vec<Line<'static>>, key: &'static str, desc: &'static str| {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {key:<18}"), theme::key_style()),
+            Span::styled(desc, theme::text()),
+        ]));
+    };
+
+    section(&mut lines, "Navigate");
+    entry(
+        &mut lines,
+        "Tab / Shift+Tab",
+        "next / previous view — Dashboard first",
+    );
+    entry(&mut lines, "↑ ↓  or  j k", "move between rows");
+
+    section(&mut lines, "Select");
+    entry(&mut lines, "Space", "toggle the highlighted item");
+    entry(
+        &mut lines,
+        "a / A",
+        "select / deselect everything in this category",
+    );
+    entry(
+        &mut lines,
+        "s",
+        "select every Safe item across all categories",
+    );
+    entry(&mut lines, "i", "invert this category's selection");
+    entry(&mut lines, "n", "clear all selections");
+    entry(&mut lines, "Enter", "Duplicates: choose which copy to keep");
+    entry(&mut lines, "", "Caches: start Docker when prompted");
+
+    section(&mut lines, "Clean");
+    entry(
+        &mut lines,
+        "d",
+        "move selected items to the Trash (undo with Put Back)",
+    );
+    entry(
+        &mut lines,
+        "D",
+        "delete selected items forever — cannot be undone",
+    );
+    entry(&mut lines, "r", "rescan (do this after cleaning)");
+
+    section(&mut lines, "Risk colors");
+    let tier = |lines: &mut Vec<Line<'static>>, t: SafetyTier, desc: &'static str| {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {:<18}", t.label()), theme::tier_style(t)),
+            Span::styled(desc, theme::text()),
+        ]));
+    };
+    tier(
+        &mut lines,
+        SafetyTier::Safe,
+        "regenerable junk — selected automatically",
+    );
+    tier(
+        &mut lines,
+        SafetyTier::Moderate,
+        "review first — may cost a rebuild or re-download",
+    );
+    tier(
+        &mut lines,
+        SafetyTier::Risky,
+        "user data or duplicate keeper — never auto-selected",
+    );
+
+    section(&mut lines, "Notes");
+    lines.push(Line::from(Span::styled(
+        "  Trash Bin items are always removed permanently, even with d.",
+        theme::dim(),
+    )));
+    lines.push(Line::from(Span::styled(
+        "  After cleaning with d, rescan and then empty the Trash Bin.",
+        theme::dim(),
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  Press any key to close this help · q or Esc quits the app",
+        theme::dim(),
+    )));
+
+    draw_popup_sized(f, area, " Help ", lines, 72, 82);
 }
 
-fn draw_popup_sized(f: &mut Frame, area: Rect, title: &str, body: &str, pct_x: u16, pct_y: u16) {
+fn draw_popup_sized(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    body: Vec<Line<'static>>,
+    pct_x: u16,
+    pct_y: u16,
+) {
     f.render_widget(Block::default().style(theme::modal_backdrop()), area);
 
     let popup = centered_rect(pct_x, pct_y, area);
