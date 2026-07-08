@@ -20,6 +20,7 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
         walk_parallel(
             &root,
             matchers,
+            ctx.limits.walk_threads,
             |path, name| {
                 if matchers.is_log_dir(name) {
                     {

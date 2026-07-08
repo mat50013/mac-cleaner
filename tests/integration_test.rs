@@ -31,6 +31,7 @@ fn ctx_for(cfg: &Config, cat: Category) -> ScanContext {
         matchers: cfg.matchers().unwrap(),
         tx: WorkerSender::null(),
         categories: vec![cat],
+        limits: Arc::new(scan::ScanLimits::auto(1)),
     }
 }
 
@@ -130,6 +131,7 @@ fn walk_parallel_prunes_excluded_and_protected() {
     scan::walk_parallel(
         root,
         &m,
+        1,
         |path, name| {
             if m.is_cache_signature(name) {
                 found.lock().unwrap().push(path.to_path_buf());

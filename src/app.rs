@@ -92,11 +92,13 @@ impl App {
         }
 
         let matchers = self.config.matchers().expect("matchers");
+        let limits = Arc::new(crate::scan::ScanLimits::auto(self.categories.len()));
         let ctx = ScanContext {
             config: Arc::new(self.config.clone()),
             matchers,
             tx: self.worker.clone(),
             categories: self.categories.clone(),
+            limits,
         };
         run_all(ctx);
     }

@@ -102,11 +102,13 @@ fn run_headless_scan(config: &Config, cats: Option<&str>, json: bool) -> Result<
     let (tx, rx) = unbounded();
     let worker = crate::event::WorkerSender::from_sender(tx.clone());
     let matchers = config.matchers()?;
+    let limits = Arc::new(crate::scan::ScanLimits::auto(categories.len()));
     let ctx = ScanContext {
         config: Arc::new(config.clone()),
         matchers,
         tx: worker,
         categories: categories.clone(),
+        limits,
     };
     run_all(ctx);
 
@@ -159,11 +161,13 @@ fn run_headless_clean(config: &Config, cats: &str, permanent: bool, dry_run: boo
     let (tx, rx) = unbounded();
     let worker = crate::event::WorkerSender::from_sender(tx.clone());
     let matchers = config.matchers()?;
+    let limits = Arc::new(crate::scan::ScanLimits::auto(categories.len()));
     let ctx = ScanContext {
         config: Arc::new(config.clone()),
         matchers,
         tx: worker,
         categories: categories.clone(),
+        limits,
     };
     run_all(ctx);
 

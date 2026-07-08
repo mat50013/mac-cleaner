@@ -18,6 +18,7 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
         walk_parallel(
             &root,
             matchers,
+            ctx.limits.walk_threads,
             |_path, _name| false,
             |path, _name| {
                 let Ok(md) = std::fs::symlink_metadata(path) else {

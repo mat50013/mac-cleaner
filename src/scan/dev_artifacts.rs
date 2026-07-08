@@ -17,6 +17,7 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
         walk_parallel(
             &root,
             matchers,
+            ctx.limits.walk_threads,
             |path, name| {
                 if should_skip_dir(ctx, path) {
                     return true;

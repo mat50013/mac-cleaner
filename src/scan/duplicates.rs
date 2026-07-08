@@ -5,6 +5,7 @@ use crate::model::{Category, SafetyTier, ScanItem};
 use crate::scan::{ScanContext, walk_parallel};
 use anyhow::Result;
 use blake3::Hasher;
+use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -17,7 +18,7 @@ const PARTIAL: usize = 4096;
 
 pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
     let files = collect_files(ctx);
-    let groups = group_duplicates(&files);
+    let groups = group_duplicates(&files, ctx.limits.hash_threads);
 
     let mut items = Vec::new();
     let mut group_id = 1u64;
@@ -78,6 +79,7 @@ fn collect_files(ctx: &ScanContext) -> Vec<FileEntry> {
         walk_parallel(
             &root,
             matchers,
+            ctx.limits.walk_threads,
             |_p, _n| false,
             |path, _name| {
                 let Ok(md) = std::fs::symlink_metadata(path) else {
@@ -107,7 +109,7 @@ fn collect_files(ctx: &ScanContext) -> Vec<FileEntry> {
 }
 
 /// Return groups of byte-identical files by index.
-fn group_duplicates(files: &[FileEntry]) -> Vec<Vec<usize>> {
+fn group_duplicates(files: &[FileEntry], hash_threads: usize) -> Vec<Vec<usize>> {
     let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
     for (i, f) in files.iter().enumerate() {
         by_size.entry(f.bytes).or_default().push(i);
@@ -118,6 +120,18 @@ fn group_duplicates(files: &[FileEntry]) -> Vec<Vec<usize>> {
         .flatten()
         .collect();
 
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(hash_threads.max(1))
+        .thread_name(|i| format!("mac-cleaner-hash-{i}"))
+        .build();
+
+    match pool {
+        Ok(pool) => pool.install(|| group_duplicates_by_hash(files, size_candidates)),
+        Err(_) => group_duplicates_by_hash(files, size_candidates),
+    }
+}
+
+fn group_duplicates_by_hash(files: &[FileEntry], size_candidates: Vec<usize>) -> Vec<Vec<usize>> {
     let partials: Vec<(usize, [u8; 32])> = size_candidates
         .par_iter()
         .filter_map(|&i| partial_hash(&files[i].path, files[i].bytes).map(|h| (i, h)))

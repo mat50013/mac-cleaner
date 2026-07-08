@@ -13,11 +13,49 @@ use crate::event::{DiskInfo, WorkerMsg, WorkerSender};
 use crate::fs_util::{dir_real_size, home_dir};
 use crate::model::{Category, SafetyTier, ScanItem};
 use ignore::WalkBuilder;
+use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::thread;
+
+/// Concurrency budget for a scan run.
+#[derive(Debug, Clone)]
+pub struct ScanLimits {
+    pub category_workers: usize,
+    pub walk_threads: usize,
+    pub hash_threads: usize,
+}
+
+impl ScanLimits {
+    pub fn auto(category_count: usize) -> Self {
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        Self::for_cpus(category_count, cpus)
+    }
+
+    fn for_cpus(category_count: usize, cpus: usize) -> Self {
+        let cpus = cpus.max(1);
+        let category_workers = category_count.max(1).min((cpus / 4).clamp(2, 4));
+        let walk_threads = (cpus / (category_workers * 2)).clamp(1, 2);
+        let hash_threads = if cpus <= 2 {
+            1
+        } else {
+            cpus.saturating_sub(category_workers)
+                .saturating_sub(1)
+                .max(2)
+        };
+
+        ScanLimits {
+            category_workers,
+            walk_threads,
+            hash_threads,
+        }
+    }
+}
 
 /// Shared context handed to every scanner.
 pub struct ScanContext {
@@ -25,6 +63,7 @@ pub struct ScanContext {
     pub matchers: Matchers,
     pub tx: WorkerSender,
     pub categories: Vec<Category>,
+    pub limits: Arc<ScanLimits>,
 }
 
 impl ScanContext {
@@ -45,20 +84,49 @@ pub fn run_all(ctx: ScanContext) {
     });
 
     let cats = ctx.categories.clone();
-    for cat in cats {
-        let cfg = Arc::clone(&ctx.config);
-        let tx = ctx.tx.clone();
-        thread::spawn(move || {
-            let matchers = cfg.matchers().expect("matchers");
-            let ctx = ScanContext {
-                config: cfg,
-                matchers,
-                tx,
-                categories: vec![cat],
-            };
-            scan_category(cat, ctx);
+    let cfg = Arc::clone(&ctx.config);
+    let tx = ctx.tx.clone();
+    let limits = Arc::clone(&ctx.limits);
+
+    thread::spawn(move || {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(limits.category_workers)
+            .thread_name(|i| format!("mac-cleaner-scan-{i}"))
+            .build();
+
+        let Ok(pool) = pool else {
+            for cat in cats {
+                tx.send(WorkerMsg::ScanSkipped {
+                    category: cat,
+                    reason: "failed to create scan worker pool".into(),
+                });
+            }
+            return;
+        };
+
+        pool.install(|| {
+            cats.into_par_iter().for_each(|cat| {
+                let matchers = match cfg.matchers() {
+                    Ok(matchers) => matchers,
+                    Err(err) => {
+                        tx.send(WorkerMsg::ScanSkipped {
+                            category: cat,
+                            reason: err.to_string(),
+                        });
+                        return;
+                    }
+                };
+                let ctx = ScanContext {
+                    config: Arc::clone(&cfg),
+                    matchers,
+                    tx: tx.clone(),
+                    categories: vec![cat],
+                    limits: Arc::clone(&limits),
+                };
+                scan_category(cat, ctx);
+            });
         });
-    }
+    });
 }
 
 fn scan_category(cat: Category, ctx: ScanContext) {
@@ -171,12 +239,21 @@ mod tests {
         let path = home.join(".Trash/old.dmg");
         assert_eq!(label_for(&path, "old.dmg"), ".Trash/old.dmg");
     }
+
+    #[test]
+    fn scan_limits_scale_for_fourteen_cores() {
+        let limits = ScanLimits::for_cpus(7, 14);
+        assert_eq!(limits.category_workers, 3);
+        assert_eq!(limits.walk_threads, 2);
+        assert_eq!(limits.hash_threads, 10);
+    }
 }
 
 /// Parallel walk of `root`. Returning `true` from `on_dir` prunes that subtree.
 pub fn walk_parallel(
     root: &Path,
     matchers: &Matchers,
+    threads: usize,
     on_dir: impl Fn(&Path, &str) -> bool + Send + Sync,
     on_file: impl Fn(&Path, &str) + Send + Sync,
 ) {
@@ -190,7 +267,8 @@ pub fn walk_parallel(
         .git_ignore(false)
         .git_global(false)
         .git_exclude(false)
-        .ignore(false);
+        .ignore(false)
+        .threads(threads.max(1));
     builder.build_parallel().run(|| {
         Box::new(|entry| {
             let Ok(entry) = entry else {
