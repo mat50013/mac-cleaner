@@ -132,6 +132,7 @@ Overview\n\
 Categories\n\
   Caches      app & dev caches (Docker prune when running)\n\
   Logs        log files and log folders\n\
+  Dev         generated project artifacts and dependency folders\n\
   Duplicates  identical files — oldest kept by default\n\
   iCloud      local copies that can be evicted to iCloud\n\
   Large Files big files to review manually\n\

@@ -34,11 +34,12 @@ impl SafetyTier {
     }
 }
 
-/// The six top-level cleaning categories.
+/// The top-level cleaning categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Category {
     Caches,
     Logs,
+    DevArtifacts,
     Duplicates,
     ICloud,
     LargeFiles,
@@ -46,9 +47,10 @@ pub enum Category {
 }
 
 impl Category {
-    pub const ALL: [Category; 6] = [
+    pub const ALL: [Category; 7] = [
         Category::Caches,
         Category::Logs,
+        Category::DevArtifacts,
         Category::Duplicates,
         Category::ICloud,
         Category::LargeFiles,
@@ -59,6 +61,7 @@ impl Category {
         match self {
             Category::Caches => "Caches",
             Category::Logs => "Logs",
+            Category::DevArtifacts => "Dev Artifacts",
             Category::Duplicates => "Duplicates",
             Category::ICloud => "iCloud Offload",
             Category::LargeFiles => "Large Files",
@@ -71,6 +74,7 @@ impl Category {
         match self {
             Category::Caches => "caches",
             Category::Logs => "logs",
+            Category::DevArtifacts => "dev",
             Category::Duplicates => "duplicates",
             Category::ICloud => "icloud",
             Category::LargeFiles => "large",
@@ -86,6 +90,7 @@ impl Category {
         match self {
             Category::Caches => "\u{2699}",
             Category::Logs => "\u{1F4C4}",
+            Category::DevArtifacts => "\u{1F6E0}",
             Category::Duplicates => "\u{29C9}",
             Category::ICloud => "\u{2601}",
             Category::LargeFiles => "\u{1F4E6}",

@@ -31,7 +31,7 @@ mac-cleaner measures real disk usage, verifies duplicates by hash, groups reclai
 Most cleaners ask you to trust them. mac-cleaner shows its work.
 
 - **See the space first.** The dashboard breaks reclaimable space down by category and refreshes as you clean.
-- **Clean only what is redundant.** Duplicates are hash-verified, caches and logs are matched by known signatures, and iCloud files are evicted rather than deleted.
+- **Clean only what is redundant.** Duplicates are hash-verified, caches/logs/dev artifacts are matched by known signatures, and iCloud files are evicted rather than deleted.
 - **Stay in control.** Every item is visible, selectable, and color-coded by risk before anything happens.
 - **Recover by default.** Normal cleanup moves files to the Trash unless you explicitly choose permanent deletion.
 - **Respect macOS.** Sparse files, Trash semantics, Full Disk Access, iCloud offload, and protected app data are all handled deliberately.
@@ -42,9 +42,10 @@ Most cleaners ask you to trust them. mac-cleaner shows its work.
 | --- | --- |
 | **Caches** | Cache-signature directories (`Cache`, `Code Cache`, `GPUCache`, `*.ShipIt`, …), developer tool caches, and Docker prune targets |
 | **Logs** | `logs` / `log` directories and `*.log` files across your home folder |
+| **Dev Artifacts** | Regenerable project outputs and dependencies such as `target`, `build`, `.terraform`, `.dart_tool`, `node_modules`, `.venv`, and simulator/Xcode artifacts |
 | **Duplicates** | Same-size files confirmed with a partial hash and a full `blake3` hash |
 | **iCloud** | Large local iCloud Drive copies that can be evicted while staying available in iCloud |
-| **Large Files** | Big files in common user folders: Downloads, Documents, Desktop, Movies |
+| **Large Files** | Big files in common user folders, plus stale installers/archives in Downloads/Desktop |
 | **Trash** | Current Trash size, with the option to empty it permanently |
 
 ## Safety model
@@ -55,6 +56,7 @@ mac-cleaner is conservative by default.
 - **Trash by default.** Use Finder's *Put Back* to undo a normal cleanup.
 - **Permanent delete is explicit.** Press `D`, never `d`, to bypass the Trash.
 - **Duplicate keepers are locked.** The oldest copy in each set is kept unless you pick a different keeper.
+- **Developer artifacts are review-first.** Build outputs and dependency folders are usually regenerable, but they are not auto-selected because cleanup can force rebuilds or reinstalls.
 - **Protected paths are skipped.** Browser profiles, keychains, SSH/GPG data, the Photos library, Steam, and similar sensitive folders are never touched.
 - **Real sizes only.** Space is measured from allocated blocks, so sparse files (like `Docker.raw`) are never overcounted.
 
@@ -130,7 +132,7 @@ mac-cleaner scan
 mac-cleaner scan --json
 
 # Limit the scan to specific categories
-mac-cleaner scan --categories caches,logs,duplicates
+mac-cleaner scan --categories caches,dev,large
 
 # Clean the auto-selected Safe items in a category (skips the prompt)
 mac-cleaner clean --categories caches --yes
@@ -142,7 +144,7 @@ mac-cleaner --dry-run
 mac-cleaner init-config
 ```
 
-Valid category slugs: `caches`, `logs`, `duplicates`, `icloud`, `large`, `trash`.
+Valid category slugs: `caches`, `logs`, `dev`, `duplicates`, `icloud`, `large`, `trash`.
 
 ## Permissions
 
@@ -181,6 +183,13 @@ age_days = 7            # logs older than this are treated as Safe
 
 [large]
 min_bytes = 104857600   # 100 MB — the Large Files threshold
+stale_archive_min_bytes = 26214400
+stale_archive_days = 30
+
+[dev_artifacts]
+roots = ["~/Documents", "~/Downloads", "~/Desktop"]
+artifact_dir_names = ["target", "build", "dist", ".next", ".terraform"]
+dependency_dir_names = ["node_modules", ".venv", "venv"]
 
 [duplicates]
 min_bytes = 1048576     # 1 MB — ignore anything smaller when hashing

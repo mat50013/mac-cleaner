@@ -50,9 +50,25 @@ pub struct DuplicatesConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct DevArtifactsConfig {
+    pub roots: Vec<String>,
+    /// Known developer tool locations outside normal project folders.
+    pub review_roots: Vec<String>,
+    /// Generated build/cache directory names that are usually regenerable.
+    pub artifact_dir_names: Vec<String>,
+    /// Dependency directories that are regenerable but may require reinstalling.
+    pub dependency_dir_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LargeConfig {
     pub roots: Vec<String>,
     pub min_bytes: u64,
+    /// Lower threshold for stale installer/archive detection.
+    pub stale_archive_min_bytes: u64,
+    /// Age gate for installer/archive review candidates.
+    pub stale_archive_days: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +83,7 @@ pub struct Config {
     pub cache: CacheConfig,
     pub logs: LogsConfig,
     pub duplicates: DuplicatesConfig,
+    pub dev_artifacts: DevArtifactsConfig,
     pub large: LargeConfig,
     pub privilege: PrivilegeConfig,
     /// Directory names skipped during recursive walks.
@@ -85,7 +102,12 @@ impl Default for CacheConfig {
                 "~/Library/Containers".into(),
                 "~/Library/Group Containers".into(),
                 "~/.cache".into(),
+                "~/.npm".into(),
                 "~/.npm/_cacache".into(),
+                "~/.pnpm-store".into(),
+                "~/Library/pnpm/store".into(),
+                "~/.yarn".into(),
+                "~/.bun/install/cache".into(),
                 "~/.cargo/registry/cache".into(),
                 "~/.gradle/caches".into(),
                 "~/.cocoapods".into(),
@@ -149,6 +171,46 @@ impl Default for DuplicatesConfig {
     }
 }
 
+impl Default for DevArtifactsConfig {
+    fn default() -> Self {
+        DevArtifactsConfig {
+            roots: vec![
+                "~/Documents".into(),
+                "~/Downloads".into(),
+                "~/Desktop".into(),
+                "~/Developer".into(),
+                "~/Code".into(),
+                "~/Projects".into(),
+            ],
+            review_roots: vec![
+                "~/Library/Developer/Xcode/DerivedData".into(),
+                "~/Library/Developer/Xcode/Archives".into(),
+                "~/Library/Developer/Xcode/iOS DeviceSupport".into(),
+                "~/Library/Developer/CoreSimulator".into(),
+                "/Library/Developer/CoreSimulator".into(),
+            ],
+            artifact_dir_names: vec![
+                "target".into(),
+                "build".into(),
+                "dist".into(),
+                ".next".into(),
+                ".turbo".into(),
+                ".parcel-cache".into(),
+                ".terraform".into(),
+                ".pytest_cache".into(),
+                ".mypy_cache".into(),
+                ".dart_tool".into(),
+            ],
+            dependency_dir_names: vec![
+                "node_modules".into(),
+                ".venv".into(),
+                "venv".into(),
+                "Pods".into(),
+            ],
+        }
+    }
+}
+
 impl Default for LargeConfig {
     fn default() -> Self {
         LargeConfig {
@@ -158,7 +220,9 @@ impl Default for LargeConfig {
                 "~/Desktop".into(),
                 "~/Movies".into(),
             ],
-            min_bytes: 100 * 1024 * 1024, // 100 MB
+            min_bytes: 100 * 1024 * 1024,              // 100 MB
+            stale_archive_min_bytes: 25 * 1024 * 1024, // 25 MB
+            stale_archive_days: 30,
         }
     }
 }
@@ -175,6 +239,7 @@ impl Default for Config {
             cache: CacheConfig::default(),
             logs: LogsConfig::default(),
             duplicates: DuplicatesConfig::default(),
+            dev_artifacts: DevArtifactsConfig::default(),
             large: LargeConfig::default(),
             privilege: PrivilegeConfig::default(),
             exclude_dir_names: vec![
@@ -199,6 +264,10 @@ impl Default for Config {
                 ".gnupg".into(),
                 "Steam".into(),
                 "minecraft".into(),
+                "backup".into(),
+                "backups".into(),
+                "results".into(),
+                "storage".into(),
                 "Photos Library.photoslibrary".into(),
                 "Mail".into(),
             ],
@@ -255,6 +324,14 @@ impl Config {
 
     pub fn duplicate_roots(&self) -> Vec<PathBuf> {
         existing(&self.duplicates.roots)
+    }
+
+    pub fn dev_artifact_roots(&self) -> Vec<PathBuf> {
+        existing(&self.dev_artifacts.roots)
+    }
+
+    pub fn dev_artifact_review_roots(&self) -> Vec<PathBuf> {
+        existing(&self.dev_artifacts.review_roots)
     }
 
     pub fn large_roots(&self) -> Vec<PathBuf> {
@@ -316,10 +393,20 @@ impl Matchers {
     pub fn is_protected(&self, path: &Path) -> bool {
         for comp in path.components() {
             let name = comp.as_os_str().to_string_lossy();
+            let lower = name.to_lowercase();
             if self.protected_names.contains(name.as_ref()) {
                 return true;
             }
             if name.starts_with("Profile ") {
+                return true;
+            }
+            if lower.ends_with(".app")
+                || lower.ends_with(".framework")
+                || lower.ends_with(".bundle")
+                || lower.ends_with(".photoslibrary")
+                || lower.ends_with(".dsym")
+                || lower.starts_with("backup")
+            {
                 return true;
             }
         }
@@ -359,6 +446,9 @@ mod tests {
         )));
         assert!(m.is_protected(Path::new("/x/Chrome/Profile 2/Cache")));
         assert!(m.is_protected(Path::new("/Users/me/.ssh/id_rsa")));
+        assert!(m.is_protected(Path::new("/Users/me/project/storage/result.json")));
+        assert!(m.is_protected(Path::new("/Users/me/Visual Studio Code.app/Contents/app")));
+        assert!(m.is_protected(Path::new("/Users/me/project/backup_siui/file.bkp")));
         assert!(!m.is_protected(Path::new("/Users/me/Library/Caches/com.spotify.client")));
     }
 

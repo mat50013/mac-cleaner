@@ -7,7 +7,7 @@ use crate::scan::{
 };
 use anyhow::Result;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
@@ -75,6 +75,7 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
     }
 
     let mut items = items_mtx.into_inner().unwrap();
+    items.extend(scan_package_cache_roots(ctx, &seen));
 
     let caches_root = home_dir().join("Library/Caches");
     if caches_root.is_dir() {
@@ -111,6 +112,56 @@ pub fn scan(ctx: &ScanContext) -> Result<Vec<ScanItem>> {
     items.extend(scan_docker()?);
     items.sort_by(|a, b| b.real_bytes.cmp(&a.real_bytes));
     Ok(items)
+}
+
+fn scan_package_cache_roots(ctx: &ScanContext, seen: &Mutex<HashSet<PathBuf>>) -> Vec<ScanItem> {
+    let mut items = Vec::new();
+    for path in ctx.config.cache_roots() {
+        if !is_package_cache_root(&path) || !path.exists() {
+            continue;
+        }
+        {
+            let mut guard = seen.lock().unwrap();
+            if !guard.insert(path.clone()) {
+                continue;
+            }
+        }
+        let bytes = path_bytes(&path);
+        if bytes == 0 {
+            continue;
+        }
+        items.push(
+            ScanItem::new(
+                path.clone(),
+                label_for(&path, "package cache"),
+                bytes,
+                SafetyTier::Moderate,
+                Category::Caches,
+            )
+            .with_note("package manager cache — may need re-download"),
+        );
+    }
+    items
+}
+
+fn is_package_cache_root(path: &Path) -> bool {
+    let rel = path
+        .strip_prefix(home_dir())
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    matches!(
+        rel.as_str(),
+        ".npm"
+            | ".npm/_cacache"
+            | ".pnpm-store"
+            | "Library/pnpm/store"
+            | ".yarn"
+            | ".bun/install/cache"
+            | ".cargo/registry/cache"
+            | ".gradle/caches"
+            | ".cocoapods"
+    )
 }
 
 fn scan_docker() -> Result<Vec<ScanItem>> {

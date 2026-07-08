@@ -1,6 +1,7 @@
 //! Scan orchestrator and per-category scanners.
 
 pub mod caches;
+pub mod dev_artifacts;
 pub mod duplicates;
 pub mod icloud;
 pub mod large;
@@ -65,6 +66,7 @@ fn scan_category(cat: Category, ctx: ScanContext) {
     let result = match cat {
         Category::Caches => caches::scan(&ctx),
         Category::Logs => logs::scan(&ctx),
+        Category::DevArtifacts => dev_artifacts::scan(&ctx),
         Category::Duplicates => duplicates::scan(&ctx),
         Category::ICloud => icloud::scan(&ctx),
         Category::LargeFiles => large::scan(&ctx),
@@ -201,10 +203,10 @@ pub fn walk_parallel(
             }
             let ft = entry.file_type();
             if ft.as_ref().is_some_and(|t| t.is_dir()) {
-                if matchers.is_excluded_dir(&name) {
+                if on_dir(path, &name) {
                     return ignore::WalkState::Skip;
                 }
-                if on_dir(path, &name) {
+                if matchers.is_excluded_dir(&name) {
                     return ignore::WalkState::Skip;
                 }
             } else if ft.as_ref().is_some_and(|t| t.is_file()) {

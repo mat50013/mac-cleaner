@@ -36,7 +36,7 @@ pub enum Commands {
         /// Output JSON instead of a table.
         #[arg(long)]
         json: bool,
-        /// Comma-separated categories: caches,logs,duplicates,icloud,large,trash
+        /// Comma-separated categories: caches,logs,dev,duplicates,icloud,large,trash
         #[arg(long)]
         categories: Option<String>,
     },

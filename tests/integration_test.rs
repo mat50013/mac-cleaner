@@ -6,7 +6,7 @@ use mac_cleaner::cli::{Cli, Commands};
 use mac_cleaner::config::{Config, DeleteMode};
 use mac_cleaner::event::{Event, WorkerMsg, WorkerSender};
 use mac_cleaner::fs_util::{dir_real_size, expand_tilde, human_size};
-use mac_cleaner::model::{Category, ItemAction, SafetyTier, ScanItem};
+use mac_cleaner::model::{Category, ItemAction, SafetyTier, ScanItem, ScanResults};
 use mac_cleaner::scan::{self, ScanContext};
 use std::collections::HashSet;
 use std::fs;
@@ -408,6 +408,93 @@ fn large_scan_sorts_by_size_and_skips_excluded_dirs() {
 }
 
 #[test]
+fn dev_artifacts_scan_detects_generated_dirs_and_prunes_subtrees() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    write_file(&root.join("rust/target/debug/app"), &[0u8; 8192]);
+    write_file(&root.join("rust/target/build/nested"), &[0u8; 8192]);
+    write_file(&root.join("web/node_modules/pkg/index.js"), &[0u8; 8192]);
+    write_file(&root.join("infra/.terraform/providers/aws"), &[0u8; 8192]);
+    write_file(&root.join("flutter/.dart_tool/build"), &[0u8; 8192]);
+    write_file(&root.join("Chrome/Default/target/secret"), &[0u8; 8192]);
+    write_file(
+        &root.join("Visual Studio Code.app/Contents/Resources/app/node_modules/pkg/index.js"),
+        &[0u8; 8192],
+    );
+
+    let mut cfg = Config::default();
+    cfg.dev_artifacts.roots = vec![path_str(root)];
+    cfg.dev_artifacts.review_roots = vec![];
+
+    let items = scan::dev_artifacts::scan(&ctx_for(&cfg, Category::DevArtifacts)).unwrap();
+
+    assert_eq!(
+        items.len(),
+        4,
+        "protected dir skipped and target pruned: {items:?}"
+    );
+    assert!(items.iter().any(|i| i.path.ends_with("target")));
+    assert!(items.iter().any(|i| i.path.ends_with("node_modules")));
+    assert!(items.iter().any(|i| i.path.ends_with(".terraform")));
+    assert!(items.iter().any(|i| i.path.ends_with(".dart_tool")));
+    assert!(
+        items
+            .iter()
+            .all(|i| !i.path.to_string_lossy().contains(".app"))
+    );
+    assert!(items.iter().all(|i| i.category == Category::DevArtifacts));
+    assert!(items.iter().all(|i| i.tier == SafetyTier::Moderate));
+}
+
+#[test]
+fn dev_artifacts_are_review_first_after_ingest() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    write_file(&root.join("app/target/debug/app"), &[0u8; 8192]);
+
+    let mut cfg = Config::default();
+    cfg.dev_artifacts.roots = vec![path_str(root)];
+    cfg.dev_artifacts.review_roots = vec![];
+
+    let items = scan::dev_artifacts::scan(&ctx_for(&cfg, Category::DevArtifacts)).unwrap();
+    let mut results = ScanResults::new();
+    results.ingest(Category::DevArtifacts, items);
+
+    assert_eq!(results.items_for(Category::DevArtifacts).len(), 1);
+    assert!(
+        results
+            .items_for(Category::DevArtifacts)
+            .iter()
+            .all(|i| !i.selected),
+        "Moderate dev artifacts are not auto-selected"
+    );
+}
+
+#[test]
+fn large_scan_includes_stale_installer_below_large_threshold() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    write_file(&root.join("old-tool.dmg"), &[0u8; 8192]);
+    write_file(&root.join("notes.txt"), &[0u8; 8192]);
+
+    let mut cfg = Config::default();
+    cfg.large.roots = vec![path_str(root)];
+    cfg.large.min_bytes = 1_000_000;
+    cfg.large.stale_archive_min_bytes = 1;
+    cfg.large.stale_archive_days = 0;
+
+    let items = scan::large::scan(&ctx_for(&cfg, Category::LargeFiles)).unwrap();
+
+    assert_eq!(items.len(), 1, "only stale archive included: {items:?}");
+    assert!(items[0].path.ends_with("old-tool.dmg"));
+    assert_eq!(items[0].tier, SafetyTier::Moderate);
+    assert_eq!(
+        items[0].regen_note,
+        "stale installer/archive — review before deleting"
+    );
+}
+
+#[test]
 fn logs_recent_file_gets_truncate_action_when_enabled() {
     let dir = tempdir().unwrap();
     let root = dir.path();
@@ -478,6 +565,28 @@ fn config_loads_overrides_and_keeps_defaults() {
     // Unspecified sections fall back to defaults.
     assert_eq!(cfg.logs.age_days, 7);
     assert_eq!(cfg.duplicates.min_bytes, 1024 * 1024);
+    assert!(
+        cfg.dev_artifacts
+            .artifact_dir_names
+            .contains(&"target".to_string())
+    );
+}
+
+#[test]
+fn config_loads_dev_artifact_overrides() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    write_file(
+        &path,
+        b"[dev_artifacts]\nroots = [\"/tmp/projects\"]\nreview_roots = []\nartifact_dir_names = [\"out\"]\ndependency_dir_names = [\"deps\"]\n",
+    );
+
+    let cfg = Config::load(Some(&path)).unwrap();
+    assert_eq!(cfg.dev_artifacts.roots, vec!["/tmp/projects"]);
+    assert!(cfg.dev_artifacts.review_roots.is_empty());
+    assert_eq!(cfg.dev_artifacts.artifact_dir_names, vec!["out"]);
+    assert_eq!(cfg.dev_artifacts.dependency_dir_names, vec!["deps"]);
+    assert_eq!(cfg.large.min_bytes, 100 * 1024 * 1024);
 }
 
 #[test]
@@ -485,14 +594,21 @@ fn config_missing_file_returns_defaults() {
     let cfg = Config::load(Some(Path::new("/no/such/mac-cleaner-config.toml"))).unwrap();
     assert_eq!(cfg.delete_mode, DeleteMode::Trash);
     assert_eq!(cfg.large.min_bytes, 100 * 1024 * 1024);
+    assert_eq!(cfg.large.stale_archive_days, 30);
+    assert!(cfg.dev_artifacts.roots.iter().any(|r| r == "~/Documents"));
 }
 
 #[test]
 fn cli_parse_categories_trims_and_drops_invalid() {
-    let cats = Cli::parse_categories("caches, logs , nope, duplicates");
+    let cats = Cli::parse_categories("caches, logs , dev, nope, duplicates");
     assert_eq!(
         cats,
-        vec![Category::Caches, Category::Logs, Category::Duplicates]
+        vec![
+            Category::Caches,
+            Category::Logs,
+            Category::DevArtifacts,
+            Category::Duplicates
+        ]
     );
     assert!(Cli::parse_categories("").is_empty());
     assert!(Cli::parse_categories("bogus,,").is_empty());
