@@ -1,36 +1,22 @@
 # mac-cleaner
 
-A terminal UI that finds the disk space macOS quietly wastes — caches, build
-artifacts, dependency folders, logs, duplicate downloads — and helps you take
-it back.
+A terminal UI that finds the disk space macOS quietly wastes — caches, build artifacts, dependency folders, logs, duplicate downloads — and helps you take it back.
 
-Everything it targets is regenerable: data your machine can recreate,
-re-download, or rebuild on demand. That kind of data is useless to keep, takes
-real space, and is scattered across so many tool-specific folders that nobody
-finds it by hand. mac-cleaner does the finding; you review and decide.
+Everything it targets is regenerable: data your machine can recreate, re-download, or rebuild on demand. That kind of data is useless to keep, takes real space, and is scattered across so many tool-specific folders that nobody finds it by hand. mac-cleaner does the finding; you review and decide.
 
 ![Dashboard: reclaimable space by category](assets/dashboard.png)
 
 ## Why this exists
 
-The space that disappears on a Mac usually isn't documents or photos. It's
-what tools leave behind and never clean up:
+The space that disappears on a Mac usually isn't documents or photos. It's what tools leave behind and never clean up:
 
-- `~/Library/Caches` grows without bound — browsers, package managers, and
-  every Electron app keep their own private stash there.
-- Every project you ever built still carries its `target`, `node_modules`,
-  `.venv`, or `build` folder, often gigabytes each.
-- Xcode keeps DerivedData, device support files, and old simulators long after
-  you need them.
-- The same installer sits in Downloads twice because the second download got a
-  ` (1)` suffix.
+- `~/Library/Caches` grows without bound — browsers, package managers, and every Electron app keep their own private stash there.
+- Every project you ever built still carries its `target`, `node_modules`, `.venv`, or `build` folder, often gigabytes each.
+- Xcode keeps DerivedData, device support files, and old simulators long after you need them.
+- The same installer sits in Downloads twice because the second download got a ` (1)` suffix.
 - Logs rotate but never get deleted.
 
-None of this is precious. Delete a cache and the app rebuilds it; delete
-`node_modules` and `npm install` restores it. The hard part was never deciding
-— it's knowing where all of it lives. mac-cleaner scans those places in
-parallel, measures real on-disk usage, and puts everything in one reviewable
-list.
+None of this is precious. Delete a cache and the app rebuilds it; delete `node_modules` and `npm install` restores it. The hard part was never deciding — it's knowing where all of it lives. mac-cleaner scans those places in parallel, measures real on-disk usage, and puts everything in one reviewable list.
 
 ## What it finds
 
@@ -49,22 +35,15 @@ list.
 Every item gets a risk tier, and the tier controls the default:
 
 - **safe** — regenerable at no cost (caches, old logs). Selected automatically.
-- **moderate** — regenerable at a price: deleting `node_modules` means
-  reinstalling, deleting DerivedData means a rebuild. Never auto-selected;
-  shown for review.
-- **risky** — user data the tool can't vouch for (large files, duplicate
-  keepers). Never auto-selected.
+- **moderate** — regenerable at a price: deleting `node_modules` means reinstalling, deleting DerivedData means a rebuild. Never auto-selected; shown for review.
+- **risky** — user data the tool can't vouch for (large files, duplicate keepers). Never auto-selected.
 
 A few more rules back that up:
 
-- Deleting moves files to the Trash. Permanent deletion is a separate key
-  (`D`) with its own confirmation.
-- In a duplicate set, one copy is always locked as the keeper. You can move
-  the lock, but you can't delete every copy.
-- Protected paths — browser profiles, keychains, SSH/GPG keys, the Photos
-  library — are skipped entirely, no matter what they contain.
-- Sizes come from allocated disk blocks, so sparse files like `Docker.raw`
-  are counted at their real size, not their apparent one.
+- Deleting moves files to the Trash. Permanent deletion is a separate key (`D`) with its own confirmation.
+- In a duplicate set, one copy is always locked as the keeper. You can move the lock, but you can't delete every copy.
+- Protected paths — browser profiles, keychains, SSH/GPG keys, the Photos library — are skipped entirely, no matter what they contain.
+- Sizes come from allocated disk blocks, so sparse files like `Docker.raw` are counted at their real size, not their apparent one.
 
 ## Install
 
@@ -74,8 +53,7 @@ With [Rust](https://rustup.rs/) installed:
 cargo install --git https://github.com/mat50013/mac-cleaner.git
 ```
 
-The binary lands in `~/.cargo/bin`. If `mac-cleaner` isn't found afterwards,
-that directory is missing from your `PATH`:
+The binary lands in `~/.cargo/bin`. If `mac-cleaner` isn't found afterwards, that directory is missing from your `PATH`:
 
 ```bash
 echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && exec zsh
@@ -91,8 +69,7 @@ cargo run --release
 
 ## Using it
 
-Start `mac-cleaner` and it scans immediately. The dashboard shows where the
-space is; `Tab` opens each category as a table you can work through:
+Start `mac-cleaner` and it scans immediately. The dashboard shows where the space is; `Tab` opens each category as a table you can work through:
 
 ![Category view: the Caches table with sizes, bars, and risk tiers](assets/detail.png)
 
@@ -111,9 +88,7 @@ space is; `Tab` opens each category as a table you can work through:
 | `?` | Help |
 | `q` | Quit |
 
-A typical session: press `s` to grab everything safe, `Tab` through Dev
-Artifacts and Duplicates to add what you recognize, `d` to clean, then `r` and
-empty the Trash Bin category.
+A typical session: press `s` to grab everything safe, `Tab` through Dev Artifacts and Duplicates to add what you recognize, `d` to clean, then `r` and empty the Trash Bin category.
 
 ### Scripting
 
@@ -127,15 +102,11 @@ mac-cleaner clean --categories caches --yes
 mac-cleaner --dry-run                     # preview, delete nothing
 ```
 
-Category slugs: `caches`, `logs`, `dev`, `duplicates`, `icloud`, `large`,
-`trash`.
+Category slugs: `caches`, `logs`, `dev`, `duplicates`, `icloud`, `large`, `trash`.
 
 ### Permissions
 
-At launch, mac-cleaner asks for administrator rights via `sudo` so it can size
-system-level caches. Skip that with `--no-elevate` to clean only your own
-files. Full Disk Access is a separate macOS permission; if it's missing, the
-app detects it and offers to open the right System Settings pane.
+At launch, mac-cleaner asks for administrator rights via `sudo` so it can size system-level caches. Skip that with `--no-elevate` to clean only your own files. Full Disk Access is a separate macOS permission; if it's missing, the app detects it and offers to open the right System Settings pane.
 
 ## Configuration
 
@@ -175,12 +146,7 @@ auto_elevate = true
 
 ## How the scan works
 
-Categories scan in parallel on a bounded thread pool sized from your CPU
-count, so a full scan takes seconds without saturating the machine. Directory
-walks use the `ignore` crate; duplicate detection buckets files by size,
-screens them with a partial hash, and confirms with a full `blake3` hash
-before anything is called a duplicate. Scanning and cleaning both run off the
-UI thread and stream progress back, so the interface never blocks.
+Categories scan in parallel on a bounded thread pool sized from your CPU count, so a full scan takes seconds without saturating the machine. Directory walks use the `ignore` crate; duplicate detection buckets files by size, screens them with a partial hash, and confirms with a full `blake3` hash before anything is called a duplicate. Scanning and cleaning both run off the UI thread and stream progress back, so the interface never blocks.
 
 ## Development
 
@@ -201,16 +167,11 @@ rsvg-convert -o assets/detail.png assets/detail.svg
 
 ## Troubleshooting
 
-**`command not found` after install** — `~/.cargo/bin` isn't on your `PATH`;
-see [Install](#install).
+**`command not found` after install** — `~/.cargo/bin` isn't on your `PATH`; see [Install](#install).
 
-**"The file … is locked. (-45)"** — the file has macOS's locked flag set.
-Clear it with `chflags nouchg "/path/to/file"` (or untick Locked in Finder's
-Get Info), then clean again.
+**"The file … is locked. (-45)"** — the file has macOS's locked flag set. Clear it with `chflags nouchg "/path/to/file"` (or untick Locked in Finder's Get Info), then clean again.
 
-**"Operation not permitted" when deleting** — some files resist being moved
-to the Trash while running as root. Use permanent delete (`D`), or relaunch
-with `--no-elevate`.
+**"Operation not permitted" when deleting** — some files resist being moved to the Trash while running as root. Use permanent delete (`D`), or relaunch with `--no-elevate`.
 
 ## License
 
