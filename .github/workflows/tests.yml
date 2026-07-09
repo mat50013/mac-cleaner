@@ -1,0 +1,43 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  fast:
+    name: fast (unit + integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run lib + integration suite
+        run: |
+          cargo test --lib
+          cargo test --test integration
+
+  e2e-fast:
+    name: e2e-fast
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run e2e suite
+        run: cargo test --test e2e
+
+  macos-ignored:
+    name: macos ignored tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run macOS-dependent ignored tests
+        run: cargo test --test integration -- --ignored

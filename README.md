@@ -157,6 +157,8 @@ cargo test -- --ignored # also the tests that touch the real Trash
 cargo fmt && cargo clippy
 ```
 
+Test layout and conventions are documented in `TESTING.md`.
+
 The README screenshots are rendered from the actual UI:
 
 ```bash
