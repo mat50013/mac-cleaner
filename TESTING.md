@@ -46,6 +46,9 @@ Some tests intentionally touch real macOS Trash behavior and are marked `#[ignor
 cargo test --test integration -- --ignored
 ```
 
+These are intentionally excluded from default CI because they depend on runner environment state (real Trash / external tooling behavior) and can be flaky.
+These run in the dedicated macOS ignored-tests CI job.
+
 ## Recommended local workflow
 
 ```bash

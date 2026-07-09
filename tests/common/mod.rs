@@ -33,10 +33,18 @@ pub fn ctx_for(cfg: &Config, cat: Category) -> ScanContext {
 }
 
 pub fn clean_and_wait(items: Vec<ScanItem>, opts: CleanOptions) -> (u64, Vec<String>) {
+    clean_and_wait_with_timeout(items, opts, Duration::from_secs(10))
+}
+
+pub fn clean_and_wait_with_timeout(
+    items: Vec<ScanItem>,
+    opts: CleanOptions,
+    timeout: Duration,
+) -> (u64, Vec<String>) {
     let (worker, rx) = WorkerSender::channel();
     run_clean(items, opts, worker);
     loop {
-        match rx.recv_timeout(Duration::from_secs(10)) {
+        match rx.recv_timeout(timeout) {
             Ok(Event::Worker(WorkerMsg::CleanDone { freed, failures })) => {
                 return (freed, failures);
             }

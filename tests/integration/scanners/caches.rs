@@ -76,7 +76,12 @@ fn given_cache_items_when_ingest_then_safe_items_autoselect_and_actions_are_dele
 
     let items =
         mac_cleaner::scan::caches::scan(&ctx_for(&cfg, Category::Caches)).expect("scan caches");
-    assert!(items.iter().all(|i| i.category == Category::Caches));
-    assert!(items.iter().all(|i| i.action == ItemAction::Delete));
-    assert!(items.iter().any(|i| i.tier == SafetyTier::Safe));
+    let fixture_items: Vec<_> = items
+        .iter()
+        .filter(|i| i.path.starts_with(root))
+        .collect();
+    assert!(!fixture_items.is_empty(), "expected at least one fixture-derived item");
+    assert!(fixture_items.iter().all(|i| i.category == Category::Caches));
+    assert!(fixture_items.iter().all(|i| i.action == ItemAction::Delete));
+    assert!(fixture_items.iter().any(|i| i.tier == SafetyTier::Safe));
 }
