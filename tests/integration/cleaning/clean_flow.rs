@@ -344,3 +344,34 @@ fn given_evict_action_when_brctl_fails_then_reports_failure() {
     assert_eq!(freed, 0);
     assert!(!failures.is_empty(), "expected brctl failure");
 }
+
+#[test]
+#[ignore]
+fn given_user_locked_file_when_cleaning_then_auto_unlocks_and_retries() {
+    let dir = tempdir().expect("tempdir");
+    let p = dir.path().join("locked.bin");
+    write_file(&p, &[0u8; 4096]);
+
+    let lock = std::process::Command::new("chflags")
+        .args(["uchg"])
+        .arg(&p)
+        .status()
+        .expect("run chflags uchg");
+    if !lock.success() {
+        return;
+    }
+
+    let item = ScanItem::new(p.clone(), "locked", 4096, SafetyTier::Safe, Category::Caches);
+    let (freed, failures) = clean_and_wait(
+        vec![item],
+        CleanOptions {
+            permanent: true,
+            dry_run: false,
+            mode: DeleteMode::Permanent,
+        },
+    );
+
+    assert!(failures.is_empty(), "unlock+retry should succeed: {failures:?}");
+    assert_eq!(freed, 4096);
+    assert!(!p.exists());
+}

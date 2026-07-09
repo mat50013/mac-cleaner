@@ -3,7 +3,7 @@
 use crate::config::DeleteMode;
 use crate::event::{WorkerMsg, WorkerSender};
 use crate::fs_util::{is_in_user_trash, user_trash_dir};
-use crate::model::{Category, ItemAction, ScanItem};
+use crate::model::{Category, ItemAction, SafetyTier, ScanItem};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -49,11 +49,8 @@ fn clean_one(item: &ScanItem, opts: &CleanOptions) -> Result<u64, String> {
             if !item.path.exists() {
                 return Ok(0);
             }
-            if should_delete_permanently(item, opts) {
-                remove_path_permanently(&item.path)?;
-            } else {
-                trash::delete(&item.path).map_err(|e| e.to_string())?;
-            }
+            let permanent = should_delete_permanently(item, opts);
+            delete_with_unlock_retry(item, permanent)?;
             Ok(bytes)
         }
         ItemAction::Truncate => {
@@ -123,6 +120,63 @@ fn should_delete_permanently(item: &ScanItem, opts: &CleanOptions) -> bool {
         || opts.mode == DeleteMode::Permanent
         || item.category == Category::Trash
         || is_in_user_trash(&item.path)
+}
+
+fn delete_with_unlock_retry(item: &ScanItem, permanent: bool) -> Result<(), String> {
+    let attempt = || -> Result<(), String> {
+        if permanent {
+            remove_path_permanently(&item.path)
+        } else {
+            trash::delete(&item.path).map_err(|e| e.to_string())
+        }
+    };
+
+    match attempt() {
+        Ok(()) => Ok(()),
+        Err(first_err) => {
+            if should_auto_unlock(item) && is_lock_related_error(&first_err) {
+                unlock_immutable_flags(&item.path).map_err(|unlock_err| {
+                    format!("unlock failed after lock error ({first_err}); {unlock_err}")
+                })?;
+                attempt().map_err(|retry_err| {
+                    format!("delete retry failed after unlock ({first_err}); {retry_err}")
+                })
+            } else {
+                Err(first_err)
+            }
+        }
+    }
+}
+
+fn should_auto_unlock(item: &ScanItem) -> bool {
+    matches!(item.tier, SafetyTier::Safe | SafetyTier::Moderate)
+}
+
+fn is_lock_related_error(msg: &str) -> bool {
+    let s = msg.to_lowercase();
+    s.contains("locked")
+        || s.contains("immutable")
+        || s.contains("uchg")
+        || s.contains("operation not permitted")
+        || s.contains(" -45")
+        || s.contains("(-45)")
+}
+
+fn unlock_immutable_flags(path: &Path) -> Result<(), String> {
+    let mut cmd = Command::new("chflags");
+    if path.is_dir() {
+        cmd.arg("-R");
+    }
+    let status = cmd
+        .arg("nouchg")
+        .arg(path)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("chflags nouchg failed".into())
+    }
 }
 
 fn remove_path_permanently(path: &Path) -> Result<(), String> {
@@ -200,5 +254,41 @@ mod tests {
         fs::File::create(&file).unwrap().write_all(b"x").unwrap();
         remove_path_permanently(&file).unwrap();
         assert!(!file.exists());
+    }
+
+    #[test]
+    fn lock_error_detection_matches_common_messages() {
+        assert!(is_lock_related_error("The file is locked. (-45)"));
+        assert!(is_lock_related_error("Operation not permitted"));
+        assert!(is_lock_related_error("immutable flag set"));
+        assert!(!is_lock_related_error("No such file or directory"));
+    }
+
+    #[test]
+    fn auto_unlock_only_for_safe_and_moderate() {
+        let safe = ScanItem::new(
+            std::path::PathBuf::from("/tmp/s"),
+            "s",
+            1,
+            SafetyTier::Safe,
+            Category::Caches,
+        );
+        let moderate = ScanItem::new(
+            std::path::PathBuf::from("/tmp/m"),
+            "m",
+            1,
+            SafetyTier::Moderate,
+            Category::Caches,
+        );
+        let risky = ScanItem::new(
+            std::path::PathBuf::from("/tmp/r"),
+            "r",
+            1,
+            SafetyTier::Risky,
+            Category::LargeFiles,
+        );
+        assert!(should_auto_unlock(&safe));
+        assert!(should_auto_unlock(&moderate));
+        assert!(!should_auto_unlock(&risky));
     }
 }
